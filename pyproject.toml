@@ -1,0 +1,30 @@
+[project]
+name = "riva-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "common",
+    "job-genie",
+    "lighthouse-genie",
+    "money-genie",
+    "workout-genie",
+]
+
+[tool.uv.workspace]
+members = [
+    "common",
+    "workout-genie",
+    "money-genie",
+    "job-genie",
+    "lighthouse-genie",
+    "experiments",
+]
+
+[tool.uv.sources]
+common = { workspace = true }
+job-genie = { workspace = true }
+money-genie = { workspace = true }
+workout-genie = { workspace = true }
+lighthouse-genie = { workspace = true }
