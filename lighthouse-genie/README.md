@@ -2,15 +2,15 @@
 
 ## Purpose
 
-The `lighthouse-genie` package is responsible for monitoring, aggregating, and summarizing updates about new technologies and trends in the AI industry, using Twitter (X) as its primary data source.
+The `lighthouse-genie` package is responsible for acting as the user's strategic advisor, personal guide, and learning coordinator. It tracks AI news, tech trends, research publications, GitHub projects, coordinates Notion integrations, maps learning roadmaps, schedules reminders, and tracks long-term goals.
 
 ## Responsibilities
 
-- **Twitter Feed Monitoring**: Tracking key AI researchers, developers, organizations, and trending hashtags on Twitter/X.
-- **News Aggregation & Filtering**: Collecting tweets, threads, and referenced links, then filtering out noise to focus on high-signal AI developments.
-- **AI Trend Summarization**: Condensing complex threads, research announcements, and product launches into clear, concise summaries.
-- **Insight Delivery**: Organizing updates by category (e.g., LLMs, tooling, robotics, research papers) and delivering scheduled or on-demand digests.
-- **Twitter API/Scraper Integration**: Managing authentication, rate limits, and data ingestion from Twitter/X.
+- **Tech Trends & AI News Monitoring**: Aggregating updates from RSS, arXiv, GitHub, Hacker News, Twitter, and other research sources.
+- **Learning & Roadmaps**: Advising on technical roadmaps, learning paths, and book recommendations.
+- **Notion Integration & Sync**: Maintaining a personal knowledge base and syncing items like bookmarked papers, lists, and task notes to Notion.
+- **Goal & Reminder Planning**: Coordinating reminders, weekly digests, and tracking progress toward long-term personal growth goals.
+- **External API Integrations**: Connecting to knowledge storage interfaces, news scrapers, and task boards.
 
 ## Dependencies
 
