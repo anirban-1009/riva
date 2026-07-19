@@ -2,7 +2,3 @@ from common.llm.providers import OllamaProvider
 from common.llm.manager import LLMManager
 
 __all__ = ["OllamaProvider", "LLMManager"]
-
-def main() -> None:
-    """Print a greeting from the common package."""
-    print("Hello from common!")
