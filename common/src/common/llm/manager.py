@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, AsyncGenerator
 from common.llm.providers import OllamaProvider
 
 class LLMManager:
@@ -15,3 +15,12 @@ class LLMManager:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         return await self.provider.chat_async(messages)
+
+    async def generate_stream(self, prompt: str, system_prompt: str | None = None) -> AsyncGenerator[str, None]:
+        """Stream a response for a single user prompt, optionally using a system prompt."""
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        async for token in self.provider.chat_stream(messages):
+            yield token

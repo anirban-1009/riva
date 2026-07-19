@@ -67,10 +67,15 @@ The main `riva-agent` orchestrator remains intentionally "dumb" regarding domain
 
 ## 3. Centralized Core Services
 
+### OpenAI-Compatible API Gateway (`riva-agent/api/`)
+Exposes standard OpenAI-compatible API endpoints allowing seamless integration with MCP hosts and client runtimes like OpenClaw.
+- **`GET /v1/models`**: Queries Ollama's local tags endpoint dynamically and returns available models.
+- **`POST /v1/chat/completions`**: Receives chat completion requests, coordinates with LLMManager, and supports real-time token streaming using Server-Sent Events (SSE).
+
 ### Local LLM (`common/llm/`)
 Central service through which all text generation and tool routing happens.
-- **`manager.py`**: Handles prompts, token limits, system personality, and orchestration of the inference loop.
-- **`providers.py`**: Interactivity/adapters for local model runtimes (e.g. llama.cpp, Ollama, vLLM).
+- **`providers.py`**: Interactivity/adapters for local model runtimes (Ollama/Gemma). Utilizes `httpx.AsyncClient` with a shared connection pool (keep-alive) and `aiter_lines()` for fast, non-blocking token-level streaming.
+- **`manager.py`**: Handles prompts, token limits, system personality, and orchestration of the inference loop, exposing async and streaming (`generate_stream`) response generators.
 - **`router.py`**: Handles dynamic routing of prompts to appropriate model configurations.
 
 ### Centralized Memory (`common/memory/`)
