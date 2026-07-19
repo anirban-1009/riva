@@ -149,60 +149,19 @@ The repository workspace is organized to clearly isolate common/shared framework
 
 ```text
 riva-agent/
-├── pyproject.toml
-├── README.md
+├── pyproject.toml           # Workspace configurations and members
+├── README.md                # Platform entry point documentation
 │
-├── riva-agent/                    # Main platform / orchestrator application
-│   ├── src/
-│   │   └── riva_agent/
-│   │       ├── api/               # API layer (OpenClaw compatibility)
-│   │       ├── router/            # Query routing to plugins
-│   │       ├── orchestrator/      # Execution flows and loops
-│   │       ├── plugin_manager/    # Dynamic discovery and plugin loading
-│   │       └── session/           # Session and session state management
-│   └── pyproject.toml
+├── main.py                  # Orchestrator entry point
 │
-├── common/                        # Shared platform code and protocols
-│   ├── src/
-│   │   └── common/
-│   │       ├── llm/               # Centralized LLM management and adapters
-│   │       │   ├── manager.py
-│   │       │   ├── providers.py
-│   │       │   └── router.py
-│   │       ├── memory/            # Centralized Memory system
-│   │       │   ├── episodic.py
-│   │       │   └── semantic.py
-│   │       ├── profile/           # Unified User Profile model
-│   │       │   └── profile.py
-│   │       ├── interfaces/        # Interfaces and protocols (e.g. Plugin protocol)
-│   │       │   └── plugin.py
-│   │       └── utils/             # Loggers, config parser, utility helpers
-│   └── pyproject.toml
+├── riva-agent/              # Platform Orchestrator (Session, router, plugins, execution)
 │
-├── workout-genie/                 # Domain Capability: fitness & nutrition
-│   ├── src/
-│   │   └── workout_genie/
-│   └── pyproject.toml
+├── common/                  # Shared framework core (LLM, memory, profile, interfaces)
 │
-├── money-genie/                   # Domain Capability: finance & budgeting
-│   ├── src/
-│   │   └── money_genie/
-│   └── pyproject.toml
-│
-├── job-genie/                     # Domain Capability: career & interviewing
-│   ├── src/
-│   │   └── job_genie/
-│   └── pyproject.toml
-│
-├── lighthouse-genie/              # Domain Capability: strategic advice & productivity
-│   ├── src/
-│   │   └── lighthouse_genie/
-│   └── pyproject.toml
-│
-└── experiments/                   # Prototyping and bench workspace
-    ├── src/
-    │   └── experiments/
-    └── pyproject.toml
+├── workout-genie/           # Genie: Fitness, health & nutrition coaching
+├── money-genie/             # Genie: Personal finance & budgeting
+├── job-genie/               # Genie: Career planning & mock interviewing
+└── lighthouse-genie/        # Genie: Strategic advisor (News, Notion, learning, goals)
 ```
 
 ---
