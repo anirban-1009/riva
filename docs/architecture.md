@@ -299,20 +299,18 @@ Workspace member packages (`common`, `job-genie`, `money-genie`, `workout-genie`
 
 ### Releasing & `scripts/build.sh`
 
-`scripts/build.sh` cuts a full release in one step: bump version → update changelog → commit → tag → build.
+`scripts/build.sh` cuts a full release in one step: bump version → regenerate changelog → commit → tag → build. Version bumping, changelog generation, the release commit, and the git tag are all delegated to [commitizen](https://commitizen-tools.github.io/commitizen/) (`cz`), run ephemerally via `uvx --from commitizen cz ...` so it isn't a project runtime dependency — an earlier version of this script hand-rolled all of that logic (bespoke `sed` version bumping, a `git log`-driven changelog), which duplicated a well-tested tool for no benefit and had its own portability bug (see below).
 
 ```bash
-./scripts/build.sh          # bumps patch: 0.1.0 -> 0.1.1
-./scripts/build.sh patch    # same as above, explicit
-./scripts/build.sh minor    # 0.1.0 -> 0.2.0
-./scripts/build.sh major    # 0.1.0 -> 1.0.0
+./scripts/build.sh          # auto-detects bump from conventional-commit types
+./scripts/build.sh patch    # force a patch bump (0.1.0 -> 0.1.1)
+./scripts/build.sh minor    # force a minor bump (0.1.0 -> 0.2.0)
+./scripts/build.sh major    # force a major bump (0.1.0 -> 1.0.0)
 ```
 
 1. **Refuses to run on a dirty working tree** (`git status --porcelain`) — the release commit should contain only the version bump and changelog, not whatever else happens to be lying around.
-2. **Bumps `pyproject.toml`'s version in place** via a `sed` substitution on the `version = "..."` line. This must use portable POSIX/BSD `sed` syntax, not GNU-only extensions — a `0,/pattern/` range address was tried first and silently no-op'd on macOS's BSD `sed` (no error, version just never changed) before being replaced with a plain `s/.../.../` substitution.
-3. **Prepends a `CHANGELOG.md` entry** from `git log`, ranged from the previous release tag (`git describe --tags --abbrev=0`) to `HEAD` — or full history on the first-ever release, when no tag exists yet. Each commit becomes one bullet (`- <subject> (<short-sha>)`), newest release entry on top.
-4. **Commits and tags the release** (`git commit -m "chore: release vX.Y.Z"` + `git tag vX.Y.Z`) — committing is required, not optional, because the tag has to point at the commit that actually contains the matching version and changelog; a tag on the prior commit would name a release that doesn't match its own `pyproject.toml`. This also gives the next run's changelog range a correct anchor.
-5. **Builds and tags the image**, both the bumped version and a moving `latest`:
+2. **`cz bump [--increment PATCH|MINOR|MAJOR] --changelog --yes`**: with no explicit increment, commitizen inspects commits since the last `vX.Y.Z` tag and picks the bump itself per conventional-commit semantics (`feat` → minor, `fix`/`refactor`/`perf` → patch, `BREAKING CHANGE`/`!` → major); an explicit `patch`/`minor`/`major` argument overrides that detection. It bumps `[project].version` in `pyproject.toml` directly (`version_provider = "pep621"` in `[tool.commitizen]`, so there's no separate commitizen-only version field to keep in sync), regenerates `CHANGELOG.md` grouped under `### Feat`/`### Fix`/`### Refactor`/`### Perf` headings (commits of other conventional types — `docs`, `chore`, `test`, `style`, `build`, `ci` — are intentionally treated as non-release-worthy and left out entirely, matching commitizen's own defaults), then commits (`bump: version X.Y.Z → X.Y.Z`) and tags (`vX.Y.Z`) in one step.
+3. **Builds and tags the image**, both the bumped version and a moving `latest`:
 
    ```bash
    docker build --build-arg VERSION="$VERSION" -t "riva-agent:$VERSION" -t riva-agent:latest .
@@ -323,4 +321,6 @@ Workspace member packages (`common`, `job-genie`, `money-genie`, `workout-genie`
 - `docker compose up -d` → runs whatever was built most recently (`latest`).
 - `RIVA_TAG=0.1.0 docker compose up -d` → pins to that exact version without rebuilding, useful for rollback or reproducing a bug against a known-good build.
 
-**Testing changes to this script**: cloning the repo (`git clone`) only reproduces _committed_ history — any uncommitted edit to the script itself won't appear in the clone until it's committed. A disposable clone is still useful for a dry run of the commit/tag/changelog logic without touching real repo history, but any Docker image built from that clone lands in the **same local Docker daemon and tag namespace** as the real project — a test run there can silently repoint `riva-agent:latest` at a throwaway image full of fake commits. Retag it back (`docker tag riva-agent:<real-version> riva-agent:latest`) before trusting `docker compose up -d` again.
+**Testing changes to this script**: cloning the repo (`git clone`) only reproduces _committed_ history — any uncommitted edit to the script itself, or to `pyproject.toml`'s `[tool.commitizen]` config, won't appear in the clone until it's committed. A disposable clone is still useful for a dry run of the bump/tag/changelog flow without touching real repo history (overlay the working-tree files that haven't been committed yet before testing), but any Docker image built from that clone lands in the **same local Docker daemon and tag namespace** as the real project — a test run there can silently repoint `riva-agent:latest` at a throwaway image full of fake commits. Retag it back (`docker tag riva-agent:<real-version> riva-agent:latest`) before trusting `docker compose up -d` again.
+
+A note from the previous, hand-rolled version of this script, kept because the failure mode is worth remembering: its `sed` version bump used a `0,/pattern/` range address, a GNU-only extension that silently no-ops on macOS's BSD `sed` — no error, the version just never changed. Fixed there with a plain `s/.../.../` substitution; moot now that `cz` owns the bump entirely, but the general lesson (GNU vs. BSD tool flags failing silently rather than loudly) applies anywhere this repo's scripts shell out to `sed`/`awk`.

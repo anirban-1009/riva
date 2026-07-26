@@ -35,3 +35,10 @@ lighthouse-genie = { workspace = true }
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
+
+[tool.commitizen]
+version_provider = "pep621"
+version_scheme = "semver2"
+tag_format = "v$version"
+major_version_zero = true
+update_changelog_on_bump = true
