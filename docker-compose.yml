@@ -1,0 +1,14 @@
+services:
+    riva-agent:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: riva-agent
+        image: riva-agent:${RIVA_TAG:-latest}
+        ports:
+            - "8085:8000"
+        environment:
+            - OLLAMA_BASE_URL=http://host.docker.internal:11434
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        restart: unless-stopped
