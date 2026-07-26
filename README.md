@@ -2,6 +2,10 @@
 
 Riva Agent is an AI platform compatible with OpenClaw that manages and orchestrates various modular capabilities (Genie packages) within a `uv` workspace, while sharing common infrastructure through the `common` package.
 
+## Documentation
+
+The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading (e.g. `docs/architecture.md`, `docs/inference-latency.md`), but treat the wiki as the source of truth if the two ever drift.
+
 ## Repository Structure
 
 ```text
