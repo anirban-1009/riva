@@ -84,8 +84,11 @@ Exposes standard OpenAI-compatible API endpoints allowing seamless integration w
   - All response/streaming payload shapes (`Chunk`, `StreamChoice`, `Delta`, `ChatCompletionResponse`, `Choice`, `AssistantMessage`, `Model`, `ModelList`) are dataclasses defined in `riva_agent/models/data.py`, serialized with `dataclasses.asdict()`, rather than ad hoc dicts.
   - Requests, the resolved model, and the extended-thinking decision are logged (`request_id`, `model`, `stream`, `think`); exceptions are logged server-side with a stack trace before being surfaced as an HTTP error.
 - **`POST /api/show`**: Proxies Ollama's native `/api/show` so Ollama-aware clients (e.g. OpenClaw's model-capability probes) can query model metadata (context length, capabilities, template) through the gateway instead of 404ing.
-- **Model selection (`config.yml`)**: A `model` key in the project-root `config.yml` (loaded by `riva_agent/config.py`), when set, overrides the `model` field of _every_ `/v1/chat/completions` request — the gateway ignores whatever model the client asks for. This is the single place to switch which model the whole platform serves; if `config.yml` doesn't set a model, the client's requested model is used as-is.
-- **Extended-thinking heuristic (`riva_agent/reasoning.py`)**: Decides per-request whether to enable Ollama's `think` field, so simple prompts stay fast and only complex ones pay the reasoning-latency cost.
+- **Config overrides (`config.yml`)**: A project-root `config.yml`, loaded once by `riva_agent/config.py`, holds process-wide overrides that always win over whatever an individual client request asks for:
+  - `model` — when set, overrides the `model` field of _every_ `/v1/chat/completions` request. This is the single place to switch which model the whole platform serves; if unset, the client's requested model is used as-is.
+  - `thinking` — kill switch for the extended-thinking heuristic below. `false` forces `think: false` on every request to a thinking-capable model, regardless of prompt content; unset/`true` (default) leaves the heuristic in charge.
+  - `streaming` — kill switch for SSE streaming. `false` forces every `/v1/chat/completions` response to be non-streaming JSON even if the client sent `"stream": true`; unset/`true` (default) respects the client's request.
+- **Extended-thinking heuristic (`riva_agent/reasoning.py`)**: Decides per-request whether to enable Ollama's `think` field, so simple prompts stay fast and only complex ones pay the reasoning-latency cost — unless overridden off entirely by `config.yml`'s `thinking: false` above.
   - The gateway first calls `OllamaProvider.get_capabilities(model)`, which queries Ollama's own `/api/tags` (cached 5 minutes) for that model's reported capabilities, and only proceeds if `"thinking"` is among them. This replaced an earlier hardcoded regex of known reasoning-model names (`qwen3`, `deepseek-r1`, `gpt-oss`, …) after that list caused a real bug: it didn't include `gemma4`, so the gateway never sent `think: false` to it — and `gemma4` defaults to thinking **on** when the field is omitted, silently adding several seconds of unwanted reasoning to every single reply. Querying Ollama directly means a newly pulled or renamed model is handled correctly with no code change.
   - `should_use_extended_thinking(messages)` then looks at the prompt itself — explicit reasoning language ("step by step", "trade-off", "optimize", "design a", …), inline math expressions, or a prompt over ~80 words — to decide `true`/`false`. No extra model call is made to decide this (just the cached capability lookup above).
 - **Reported version**: The gateway's OpenAPI `version` field is read live from installed package metadata (`importlib.metadata.version("riva-agent")`) rather than hardcoded, so it can never drift from `pyproject.toml`.
@@ -294,21 +297,30 @@ User Request
 
 Workspace member packages (`common`, `job-genie`, `money-genie`, `workout-genie`, `lighthouse-genie`, `experiments`) each keep their own `version` field in their `pyproject.toml`, but these are internal-only libraries never published independently — they aren't kept in lockstep with the root version, and their version numbers carry no operational meaning.
 
-### Image Tagging & `scripts/build.sh`
+### Releasing & `scripts/build.sh`
 
-A single build always produces **two tags on the same image**: a pinned version tag and a moving `latest` tag.
-
-```bash
-./scripts/build.sh
-```
-
-This reads the version out of `pyproject.toml` and runs:
+`scripts/build.sh` cuts a full release in one step: bump version → update changelog → commit → tag → build.
 
 ```bash
-docker build --build-arg VERSION="$VERSION" -t "riva-agent:$VERSION" -t riva-agent:latest .
+./scripts/build.sh          # bumps patch: 0.1.0 -> 0.1.1
+./scripts/build.sh patch    # same as above, explicit
+./scripts/build.sh minor    # 0.1.0 -> 0.2.0
+./scripts/build.sh major    # 0.1.0 -> 1.0.0
 ```
+
+1. **Refuses to run on a dirty working tree** (`git status --porcelain`) — the release commit should contain only the version bump and changelog, not whatever else happens to be lying around.
+2. **Bumps `pyproject.toml`'s version in place** via a `sed` substitution on the `version = "..."` line. This must use portable POSIX/BSD `sed` syntax, not GNU-only extensions — a `0,/pattern/` range address was tried first and silently no-op'd on macOS's BSD `sed` (no error, version just never changed) before being replaced with a plain `s/.../.../` substitution.
+3. **Prepends a `CHANGELOG.md` entry** from `git log`, ranged from the previous release tag (`git describe --tags --abbrev=0`) to `HEAD` — or full history on the first-ever release, when no tag exists yet. Each commit becomes one bullet (`- <subject> (<short-sha>)`), newest release entry on top.
+4. **Commits and tags the release** (`git commit -m "chore: release vX.Y.Z"` + `git tag vX.Y.Z`) — committing is required, not optional, because the tag has to point at the commit that actually contains the matching version and changelog; a tag on the prior commit would name a release that doesn't match its own `pyproject.toml`. This also gives the next run's changelog range a correct anchor.
+5. **Builds and tags the image**, both the bumped version and a moving `latest`:
+
+   ```bash
+   docker build --build-arg VERSION="$VERSION" -t "riva-agent:$VERSION" -t riva-agent:latest .
+   ```
 
 `docker-compose.yml`'s image reference is env-driven: `image: riva-agent:${RIVA_TAG:-latest}`.
 
 - `docker compose up -d` → runs whatever was built most recently (`latest`).
 - `RIVA_TAG=0.1.0 docker compose up -d` → pins to that exact version without rebuilding, useful for rollback or reproducing a bug against a known-good build.
+
+**Testing changes to this script**: cloning the repo (`git clone`) only reproduces _committed_ history — any uncommitted edit to the script itself won't appear in the clone until it's committed. A disposable clone is still useful for a dry run of the commit/tag/changelog logic without touching real repo history, but any Docker image built from that clone lands in the **same local Docker daemon and tag namespace** as the real project — a test run there can silently repoint `riva-agent:latest` at a throwaway image full of fake commits. Retag it back (`docker tag riva-agent:<real-version> riva-agent:latest`) before trusting `docker compose up -d` again.
