@@ -2,15 +2,26 @@ import asyncio
 import json
 import time
 import uuid
+from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, AsyncGenerator
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from common.llm.providers import OllamaProvider
+from riva_agent.models.data import (
+    AssistantMessage,
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    Choice,
+    Chunk,
+    Delta,
+    Model,
+    ModelList,
+    StreamChoice,
+)
 
 try:
     __version__ = version("riva-agent")
@@ -18,19 +29,6 @@ except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
 app = FastAPI(title="Riva Agent AI Gateway", version=__version__)
-
-
-class ChatMessage(BaseModel):
-    role: str
-    content: str
-
-
-class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: list[ChatMessage]
-    stream: bool = False
-    temperature: float | None = None
-    max_tokens: int | None = None
 
 
 # How often to emit an SSE comment while waiting for the next token, so
@@ -60,41 +58,37 @@ async def stream_generator(
             except StopAsyncIteration:
                 break
 
-            chunk = {
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": created_time,
-                "model": model,
-                "choices": [
-                    {"index": 0, "delta": {"content": token}, "finish_reason": None}
-                ],
-            }
-            yield f"data: {json.dumps(chunk)}\n\n"
+            chunk = Chunk(
+                id=request_id,
+                created=created_time,
+                model=model,
+                choices=[StreamChoice(delta=Delta(content=token))],
+            )
 
-        done_chunk = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created_time,
-            "model": model,
-            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-        }
-        yield f"data: {json.dumps(done_chunk)}\n\n"
+            yield f"data: {json.dumps(asdict(chunk))}\n\n"
+
+        done_chunk = Chunk(
+            id=request_id,
+            created=created_time,
+            model=model,
+            choices=[StreamChoice(index=0, finish_reason="stop")],
+        )
+
+        yield f"data: {json.dumps(asdict(done_chunk))}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
-        error_chunk = {
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created_time,
-            "model": model,
-            "choices": [
-                {
-                    "index": 0,
-                    "delta": {"content": f"\n[Stream Error: {e}]"},
-                    "finish_reason": "error",
-                }
+        error_chunk = Chunk(
+            id=request_id,
+            created=created_time,
+            model=model,
+            choices=[
+                StreamChoice(
+                    delta=Delta(content=f"\n[Stream Error: {e}]"),
+                    finish_reason="error",
+                )
             ],
-        }
-        yield f"data: {json.dumps(error_chunk)}\n\n"
+        )
+        yield f"data: {json.dumps(asdict(error_chunk))}\n\n"
         yield "data: [DONE]\n\n"
 
 
@@ -108,17 +102,10 @@ async def list_models() -> dict[str, Any]:
         response.raise_for_status()
         ollama_models = response.json().get("models", [])
 
-        models_list = []
-        for model in ollama_models:
-            models_list.append(
-                {
-                    "id": model["name"],
-                    "object": "model",
-                    "created": int(time.time()),
-                    "owned_by": "ollama",
-                }
-            )
-        return {"object": "list", "data": models_list}
+        models = [
+            Model(id=model["name"], created=int(time.time())) for model in ollama_models
+        ]
+        return asdict(ModelList(data=models))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch models: {e}")
 
@@ -171,19 +158,12 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
 
     try:
         content = await provider.chat_async(messages_payload, options=options)
-        return {
-            "id": request_id,
-            "object": "chat.completion",
-            "created": created_time,
-            "model": request.model,
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {"role": "assistant", "content": content},
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": None,
-        }
+        response = ChatCompletionResponse(
+            id=request_id,
+            created=created_time,
+            model=request.model,
+            choices=[Choice(message=AssistantMessage(content=content))],
+        )
+        return asdict(response)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
