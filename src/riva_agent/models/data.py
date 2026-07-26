@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 @dataclass
 class Delta:
+    role: str | None = None
     content: str | None = None
 
 
