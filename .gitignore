@@ -11,3 +11,4 @@ wheels/
 
 # Local Wiki Repo
 wiki/
+.DS_Store
