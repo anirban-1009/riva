@@ -1,5 +1,7 @@
 # Riva Agent Architecture
 
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/Architecture) — the wiki is the canonical source; update it first.
+
 This document describes the design philosophy, layers, core systems, and interfaces for the Riva Agent platform.
 
 ---
