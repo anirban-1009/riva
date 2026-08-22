@@ -7,7 +7,11 @@ authors = [
     { name = "Anirban Sikdar", email = "anirban9293@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "jupyter>=1.1.1",
+    "lab>=8.10",
+    "ollama>=0.6.2",
+]
 
 [project.scripts]
 experiments = "experiments:main"
