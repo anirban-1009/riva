@@ -2,8 +2,8 @@ from typing import List, Optional
 
 import requests
 
-from src.core.ai.base import LLMClient
 from src.utils.logger import get_logger
+from src.core.ai.base import LLMClient
 
 logger = get_logger(__name__)
 
