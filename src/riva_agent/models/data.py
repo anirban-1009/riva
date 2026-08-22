@@ -41,6 +41,11 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
 
 
+class EmbeddingRequest(BaseModel):
+    model: str
+    input: str | list[str]
+
+
 @dataclass
 class StreamChoice:
     delta: Delta = field(default_factory=Delta)
@@ -91,4 +96,18 @@ class Model:
 @dataclass
 class ModelList:
     data: list[Model]
+    object: str = "list"
+
+
+@dataclass
+class EmbeddingData:
+    embedding: list[float]
+    index: int = 0
+    object: str = "embedding"
+
+
+@dataclass
+class EmbeddingResponse:
+    data: list[EmbeddingData]
+    model: str
     object: str = "list"

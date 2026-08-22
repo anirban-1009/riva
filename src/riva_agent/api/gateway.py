@@ -20,6 +20,9 @@ from riva_agent.models.data import (
     Choice,
     Chunk,
     Delta,
+    EmbeddingData,
+    EmbeddingRequest,
+    EmbeddingResponse,
     Model,
     ModelList,
     StreamChoice,
@@ -136,6 +139,29 @@ async def list_models() -> dict[str, Any]:
     except Exception as e:
         logger.exception("list_models failed")
         raise HTTPException(status_code=500, detail=f"Failed to fetch models: {e}")
+
+
+@app.post("/v1/embeddings")
+async def create_embeddings(request: EmbeddingRequest) -> dict[str, Any]:
+    """Return embedding vectors for the given input(s), in OpenAI-compatible format."""
+    provider = create_provider(
+        config.PROVIDER,
+        model=request.model,
+        base_url=config.OPENAI_BASE_URL,
+        api_key=config.OPENAI_API_KEY,
+    )
+
+    inputs = request.input if isinstance(request.input, list) else [request.input]
+
+    try:
+        vectors = await asyncio.gather(*(provider.embed_async(text) for text in inputs))
+        data = [
+            EmbeddingData(embedding=vector, index=index) for index, vector in enumerate(vectors)
+        ]
+        return asdict(EmbeddingResponse(data=data, model=request.model))
+    except Exception as e:
+        logger.exception("create_embeddings failed model=%s", request.model)
+        raise HTTPException(status_code=500, detail=f"Failed to create embeddings: {e}")
 
 
 @app.post("/api/show")

@@ -55,6 +55,8 @@ class LLMProvider(Protocol):
 
     async def list_models(self) -> list[str]: ...
 
+    async def embed_async(self, text: str) -> list[float]: ...
+
 
 class OllamaProvider:
     """Provider for communicating with a local Ollama instance."""
@@ -133,6 +135,19 @@ class OllamaProvider:
         response = await client.get(f"{self.base_url}/api/tags")
         response.raise_for_status()
         return [m["name"] for m in response.json().get("models", [])]
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Return an embedding vector for `text` via Ollama's /api/embeddings."""
+        client = self._get_client()
+        url = f"{self.base_url}/api/embeddings"
+        payload = {"model": self.model, "prompt": text}
+
+        try:
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            return list(response.json()["embedding"])
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"Ollama embedding request failed: {e}") from e
 
     def chat(
         self,
@@ -319,6 +334,19 @@ class OpenAICompatibleProvider:
         )
         response.raise_for_status()
         return [m["id"] for m in response.json().get("data", [])]
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Return an embedding vector for `text` via the standard POST /embeddings."""
+        client = self._get_client()
+        url = f"{self.base_url}/embeddings"
+        payload = {"model": self.model, "input": text}
+
+        try:
+            response = await client.post(url, json=payload, headers=self._auth_headers())
+            response.raise_for_status()
+            return list(response.json()["data"][0]["embedding"])
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"OpenAI-compatible embedding request failed: {e}") from e
 
     def chat(
         self,
