@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.ruff_cache/
+
+# Mac
+.DS_Store
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment
+.env
+config.yaml
+
+# Application Data
+# Ignore everything in data/ but keep .gitkeep and sample files
+data/
+!data/.gitkeep
+!data/sample_connections.csv
+!data/sample_resume.pdf
+
+# Ignore session data specifically (redundant with data/* but explicit is safe)
+data/session.json
+data/job_cache/
+
+# Application Output
+output/*
+!output/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+debug*
+temp_compile_*
+temp_compile

@@ -1,0 +1,176 @@
+%-------------------------
+% Resume in Latex
+% Author : Jake Gutierrez
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%-------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[letterpaper,margin=0.75in]{geometry}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\input{glyphtounicode}
+
+
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-4pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+
+\begin{center}
+    \textbf{\Huge \scshape {{ first_name }} {{ last_name }}} \\ \vspace{1pt}
+    \small {{ phone }} $|$ \href{mailto:{{ email }}}{\underline{ {{ email }} }}
+    {% if linkedin and linkedin != 'None' %} $|$ \href{ {{ linkedin if linkedin.startswith('http') else 'https://' + linkedin }} }{\underline{ {{ linkedin }} }}{% endif %}
+    {% if github and github != 'None' %} $|$ \href{ {{ github if github.startswith('http') else 'https://' + github }} }{\underline{ {{ github }} }}{% endif %}
+    {% if website and website != 'None' %} $|$ \href{ {{ website if website.startswith('http') else 'https://' + website }} }{\underline{ {{ website }} }}{% endif %}
+\end{center}
+
+
+%-----------EXPERIENCE-----------
+{% if experience %}
+\section{Experience}
+  \resumeSubHeadingListStart
+
+    {% for job in experience %}
+    \resumeSubheading
+      { {{ job.title }} }
+      { {{ job.dates }} }
+      { {{ job.company }} }
+      { {{ job.location }} }
+      \resumeItemListStart
+        {% for bullet in job.bullets %}
+        \resumeItem{ {{ bullet }} }
+        {% endfor %}
+      \resumeItemListEnd
+    {% endfor %}
+
+  \resumeSubHeadingListEnd
+{% endif %}
+
+%-----------EDUCATION-----------
+{% if education %}
+\section{Education}
+  \resumeSubHeadingListStart
+    {% for edu in education %}
+    \resumeSubheading
+      { {{ edu.institution }} }
+      { {{ edu.dates }} }
+      { {{ edu.degree }} }
+      { {{ edu.location }} }
+    {% endfor %}
+  \resumeSubHeadingListEnd
+{% endif %}
+
+%-----------PROJECTS-----------
+{% if projects %}
+\section{Projects}
+    \resumeSubHeadingListStart
+      {% for project in projects %}
+      \resumeProjectHeading
+          {\textbf{ {{ project.name }} } $|$ \emph{ {{ project.technologies }} }}
+          { {{ project.dates|default('') }} }
+          \resumeItemListStart
+            \resumeItem{ {{ project.description }} }
+          \resumeItemListEnd
+      {% endfor %}
+    \resumeSubHeadingListEnd
+{% endif %}
+
+%-----------TECHNICAL SKILLS-----------
+{% if skills %}
+\section{Technical Skills}
+ \begin{itemize}[leftmargin=0.15in, label={}]
+    \small{\item{
+     {% for category, items in skills.items() %}
+     \textbf{ {{ category | latex_escape }}: }{ {{ items|join(', ') }} } \\
+     {% endfor %}
+    }}
+ \end{itemize}
+{% endif %}
+
+
+%-------------------------------------------
+\end{document}

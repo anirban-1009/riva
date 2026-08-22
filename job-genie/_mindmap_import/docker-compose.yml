@@ -1,0 +1,17 @@
+services:
+  mindmap:
+    build: .
+    image: mindmap:latest
+    container_name: mindmap
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./output:/app/output
+      # Mount your local Obsidian vault if needed
+      # - /path/to/your/vault:/vault
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Interactive mode is needed for manual login
+    stdin_open: true
+    tty: true

@@ -1,0 +1,27 @@
+---
+type: gap-analysis
+tag: {{ (tag if tag else "All Jobs") | yaml }}
+min_score: {{ min_score }}
+generated: {{ generated_at | yaml }}
+tags:
+  - gap-analysis
+---
+# Gap Analysis Report: {{ tag if tag else "All Jobs" }}
+
+- **Threshold:** Scored >= {{ min_score }}
+- **Generated:** {{ generated_at }}
+
+## Top Missing Skills
+{% for skill, count in report.skill_frequency.items() %}
+- **{{ skill }}**: Found in {{ count }} job listings.
+{% endfor %}
+
+## Detailed Gap Table
+| Job Title | Company | Missing Skills |
+| :--- | :--- | :--- |
+{% for detail in report.details %}
+| [[{{ detail.title }} - {{ detail.company }}\|{{ detail.title }}]] | [[{{ detail.company }}]] | {% for skill in detail.missing_skills %}• {{ skill }}{% if not loop.last %}<br>{% endif %}{% endfor %} |
+{% endfor %}
+
+## Improvement Plan
+{{ report.improvement_plan }}
