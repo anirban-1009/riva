@@ -1,7 +1,7 @@
 [project]
 name = "job-genie"
 version = "0.1.0"
-description = "Add your description here"
+description = "Career and job-search related capabilities: job search, resume tailoring, gap analysis, and Obsidian-based tracking."
 readme = "README.md"
 authors = [
     { name = "Anirban Sikdar", email = "anirban9293@gmail.com" }
@@ -9,6 +9,26 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "common",
+    "pypdf>=5.1.0",
+    "pandas>=2.2.0",
+    "pyyaml>=6.0.1",
+    "playwright>=1.49.0",
+    "google-genai>=0.2.0",
+    "Jinja2>=3.1.2",
+    "click>=8.1.7",
+    "python-dotenv>=1.0.0",
+    "colorama>=0.4.6",
+    "sqlite-vec>=0.1.3",
+    "pdflatex>=0.1.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "pre-commit>=3.5.0",
+    "coverage-badge>=1.1.0",
 ]
 
 [project.scripts]
@@ -20,3 +40,13 @@ build-backend = "uv_build"
 
 [tool.uv.sources]
 common = { workspace = true }
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.pytest.ini_options]
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]

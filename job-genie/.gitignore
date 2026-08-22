@@ -1,0 +1,27 @@
+# Local config & secrets
+.env
+config.yaml
+
+# Application data (keep placeholders only)
+data/*
+!data/.gitkeep
+!data/sample_connections.csv
+!data/sample_resume.pdf
+
+# Application output
+output/*
+!output/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+debug*
+temp_compile*
+
+# Test/coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+coverage.svg
+.pytest_cache/
+.ruff_cache/
