@@ -1,6 +1,7 @@
 import logging
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 from colorama import Fore, Style
 
@@ -10,7 +11,7 @@ class ColoredFormatter(logging.Formatter):
 
     TIME_PREFIX = Fore.BLACK + Style.BRIGHT + "%(asctime)s" + Style.RESET_ALL + " "
 
-    FORMATS = {
+    FORMATS: ClassVar[dict[int, str]] = {
         logging.DEBUG: TIME_PREFIX + Fore.CYAN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
         logging.INFO: TIME_PREFIX + Fore.GREEN + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",
         logging.WARNING: TIME_PREFIX + Fore.YELLOW + "%(levelname)s" + Style.RESET_ALL + ": %(message)s",

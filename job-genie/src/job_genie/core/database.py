@@ -465,6 +465,12 @@ class DatabaseManager:
             logger.error(f"Failed to delete vault document {path}: {e}")
             raise
 
+    @staticmethod
+    def _sanitize_fts_query(query: str) -> str:
+        """Quotes each token as an FTS5 literal phrase so characters like `-`, `"`, `*`, `(`, `:` in the
+        raw user query aren't interpreted as FTS5 query-syntax operators."""
+        return " ".join('"' + token.replace('"', '""') + '"' for token in query.split())
+
     def search_vault_text(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """Full-text search over the vault index using FTS5, ranked by BM25."""
         sql = """
@@ -473,9 +479,12 @@ class DatabaseManager:
                bm25(vault_index) AS rank
         FROM vault_index WHERE vault_index MATCH ? ORDER BY rank LIMIT ?
         """
+        fts_query = self._sanitize_fts_query(query)
+        if not fts_query:
+            return []
         try:
             with contextlib.closing(self._get_connection()) as conn:
-                cursor = conn.execute(sql, (query, limit))
+                cursor = conn.execute(sql, (fts_query, limit))
                 return [dict(row) for row in cursor.fetchall()]
         except Exception as e:
             logger.error(f"Vault text search failed for query '{query}': {e}")

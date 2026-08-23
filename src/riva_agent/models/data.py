@@ -21,15 +21,22 @@ class ChatMessage(BaseModel):
         the Vercel AI SDK even for plain text) and flatten it to a string.
 
         Only text parts are kept since no configured provider handles
-        image/audio inputs yet; other part types are silently dropped rather
-        than rejecting the whole request.
+        image/audio inputs yet; other part types are dropped rather than
+        rejecting the whole request outright. If the parts list has no text
+        content at all (e.g. an image-only message), this raises instead of
+        silently forwarding an empty turn to the LLM.
         """
         if isinstance(value, list):
-            return "".join(
+            flattened = "".join(
                 part.get("text", "")
                 for part in value
                 if isinstance(part, dict) and part.get("type") == "text"
             )
+            if not flattened and value:
+                raise ValueError(
+                    "content parts contained no text part; non-text-only content (e.g. images) is not supported"
+                )
+            return flattened
         return value
 
 

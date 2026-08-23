@@ -35,7 +35,7 @@ class TestLLMClient:
 
         assert result == "Ollama Response"
         mock_post.assert_called_once()
-        args, kwargs = mock_post.call_args
+        _args, kwargs = mock_post.call_args
         assert kwargs["json"]["model"] == "llama3"
 
     def test_llm_client_generate_json(self):

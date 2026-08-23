@@ -33,7 +33,7 @@ class LLMClient(ABC):
         """
         return []
 
-    def generate_json(self, prompt: str, system_instruction: str | None = None) -> dict[str, Any]:
+    def generate_json(self, prompt: str, system_instruction: str | None = None) -> dict[str, Any] | list[Any]:
         """
         Generates a JSON response from the LLM.
 
@@ -42,7 +42,8 @@ class LLMClient(ABC):
             system_instruction: Optional system instruction.
 
         Returns:
-            Dict[str, Any]: A dictionary parsed from the LLM's JSON output.
+            The value parsed from the LLM's JSON output - a dict for a JSON object response,
+            or a list for a JSON array response.
         """
         response_text = self.generate(prompt, system_instruction)
         if not response_text:
@@ -57,20 +58,25 @@ class LLMClient(ABC):
 
             return json.loads(response_text, strict=False)
         except json.JSONDecodeError:
-            # Fallback: Try to find the first '{' and last '}'
-            start = response_text.find("{")
-            end = response_text.rfind("}")
-            if start != -1 and end != -1:
+            # Fallback: extract the first top-level JSON object or array, whichever starts first.
+            spans = []
+            obj_start, obj_end = response_text.find("{"), response_text.rfind("}")
+            if obj_start != -1 and obj_end != -1:
+                spans.append((obj_start, obj_end))
+            arr_start, arr_end = response_text.find("["), response_text.rfind("]")
+            if arr_start != -1 and arr_end != -1:
+                spans.append((arr_start, arr_end))
+            spans.sort()
+
+            for start, end in spans:
                 try:
                     return json.loads(response_text[start : end + 1], strict=False)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from LLM (fallback): {e}")
-                    logger.debug(f"Raw response: {response_text}")
-                    return {}
-            else:
-                logger.error("Failed to parse JSON from LLM: No JSON object found.")
-                logger.debug(f"Raw response: {response_text}")
-                return {}
+                except json.JSONDecodeError:
+                    continue
+
+            logger.error("Failed to parse JSON from LLM: No JSON object or array found.")
+            logger.debug(f"Raw response: {response_text}")
+            return {}
         except Exception as e:
             logger.error(f"Unexpected error parsing LLM response: {e}")
             return {}

@@ -50,7 +50,7 @@ class ReferralService:
         skills_str = "None identified"
         if isinstance(resume_data.get("skills"), dict):
             all_skills = []
-            for cat, items in resume_data["skills"].items():
+            for items in resume_data["skills"].values():
                 if isinstance(items, list):
                     all_skills.extend(items)
             skills_str = ", ".join(all_skills[:8])

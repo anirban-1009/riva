@@ -79,7 +79,7 @@ class LinkedInParser:
 
         except Exception as e:
             if isinstance(e, LinkedInDataError):
-                raise e
+                raise
             raise LinkedInDataError(f"Failed to parse LinkedIn connections: {e}") from e
 
     def get_companies(self) -> list[str]:
@@ -94,7 +94,7 @@ class LinkedInParser:
         for conn in connections:
             if conn["company"]:
                 companies.add(conn["company"])
-        return sorted(list(companies))
+        return sorted(companies)
 
     def _normalize_company(self, company_name: str) -> str:
         """

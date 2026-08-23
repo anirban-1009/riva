@@ -45,6 +45,15 @@ common = { workspace = true }
 line-length = 120
 target-version = "py313"
 
+[tool.ruff.lint]
+ignore = [
+    "BLE001", # broad `except Exception` is intentional throughout scraping/notification code, which must keep running past unpredictable third-party (playwright, smtplib, LLM API) failures
+    "S112",   # `except ... continue` is used deliberately in ingestion loops to skip a bad record and keep processing the rest
+    "DTZ001", # this is a local, single-user CLI tool operating on the user's wall-clock dates; timezone-aware datetimes add no value here
+    "DTZ005",
+    "DTZ007",
+]
+
 [tool.pytest.ini_options]
 addopts = "-ra -q"
 testpaths = [

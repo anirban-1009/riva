@@ -26,7 +26,7 @@ class VaultManager:
 
     def ensure_folders_exist(self) -> None:
         """Create all configured subfolders in the vault if they don't exist."""
-        for key, folder_name in self.folders.items():
+        for folder_name in self.folders.values():
             folder_path = self.vault_path / folder_name
             if not folder_path.exists():
                 logger.info(f"Creating folder: {folder_path}")

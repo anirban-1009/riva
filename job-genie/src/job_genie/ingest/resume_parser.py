@@ -55,7 +55,7 @@ class PDFResumeParser(ResumeParser):
         except Exception as e:
             # Identify specific pypdf exceptions if needed, otherwise wrap generic ones
             if isinstance(e, (ValueError, FileNotFoundError)):
-                raise e
+                raise
             raise ResumeParsingError(f"Failed to parse PDF: {e}") from e
 
         full_text = "\n".join(raw_text)

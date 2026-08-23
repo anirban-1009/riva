@@ -459,8 +459,12 @@ class JobDetailsExtractor:
         """
         results = []
         for job in job_list:
-            jid = getattr(job, "id", None) or job.get("id")
-            jlink = getattr(job, "link", None) or job.get("link")
+            if isinstance(job, dict):
+                jid = job.get("id")
+                jlink = job.get("link")
+            else:
+                jid = getattr(job, "id", None)
+                jlink = getattr(job, "link", None)
 
             if not jid or not jlink:
                 continue

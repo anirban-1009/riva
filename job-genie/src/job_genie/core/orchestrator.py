@@ -551,7 +551,8 @@ class MindMapApp:
 
         filtered = []
         for job in jobs:
-            title = (getattr(job, "title", "") or job.get("title", "") or "").lower()
+            raw_title = job.get("title") if isinstance(job, dict) else getattr(job, "title", "")
+            title = (raw_title or "").lower()
             if not any(word.lower() in title for word in exclude):
                 filtered.append(job)
             else:

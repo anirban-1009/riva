@@ -169,9 +169,13 @@ class TestBrowserManager:
         mock_page.locator.return_value.count.return_value = 0
         mock_page.wait_for_selector.side_effect = Exception("Timeout")
 
-        with patch.object(manager, "start"), patch.object(manager, "goto"), patch.object(manager, "page", mock_page):
-            with pytest.raises(ScraperError, match="Login timeout"):
-                manager.login_manual()
+        with (
+            patch.object(manager, "start"),
+            patch.object(manager, "goto"),
+            patch.object(manager, "page", mock_page),
+            pytest.raises(ScraperError, match="Login timeout"),
+        ):
+            manager.login_manual()
 
     @patch("job_genie.ingest.browser_manager.sync_playwright")
     def test_stop_skips_save_on_login_page(self, mock_playwright_sync, tmp_path):

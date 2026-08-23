@@ -428,7 +428,8 @@ class OpenAICompatibleProvider:
                         break
                     chunk = json.loads(data)
                     choices = chunk.get("choices") or [{}]
-                    content = choices[0].get("delta", {}).get("content")
+                    delta = choices[0].get("delta") or {}
+                    content = delta.get("content")
                     if content:
                         yield content
         except httpx.HTTPError as e:
@@ -450,9 +451,10 @@ def create_provider(
 ) -> LLMProvider:
     """Instantiate the named backend ("ollama" or "openai") with optional overrides.
 
-    `api_key` is silently dropped for backends that don't accept one (e.g.
-    Ollama) so callers can pass it unconditionally without checking which
-    backend is active.
+    `api_key` and `base_url` are silently dropped for backends other than the
+    one they were configured for (e.g. `base_url` is the "openai" provider's
+    own config value and would misroute Ollama if forwarded to it) so callers
+    can pass both unconditionally without checking which backend is active.
     """
     try:
         cls = _PROVIDERS[name.lower()]
@@ -463,7 +465,7 @@ def create_provider(
     kwargs: dict[str, Any] = {}
     if model:
         kwargs["model"] = model
-    if base_url:
+    if base_url and cls is OpenAICompatibleProvider:
         kwargs["base_url"] = base_url
     if api_key and cls is OpenAICompatibleProvider:
         kwargs["api_key"] = api_key

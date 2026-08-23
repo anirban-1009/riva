@@ -43,7 +43,7 @@ class JobSearcher:
         self.browser = browser_manager
 
     def construct_search_url(
-        self, keywords: str, location: str, filters: dict[str, list[str]] = None, location_type: str = "Any"
+        self, keywords: str, location: str, filters: dict[str, list[str]] | None = None, location_type: str = "Any"
     ) -> str:
         """
         Constructs a LinkedIn search URL based on criteria.
@@ -86,7 +86,7 @@ class JobSearcher:
         return f"{LINKEDIN_JOBS_SEARCH_URL}?{query_string}"
 
     def search(
-        self, keywords: str, location: str, filters: dict[str, list[str]] = None, location_type: str = "Any"
+        self, keywords: str, location: str, filters: dict[str, list[str]] | None = None, location_type: str = "Any"
     ) -> list[JobSearchResult]:
         """
         Performs the job search and scrapes results.

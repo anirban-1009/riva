@@ -17,10 +17,12 @@ class TestResumeService:
 
     def test_get_resume_data_cache_hit(self, resume_service):
         mock_data = {"first_name": "Anirban"}
-        with patch("pathlib.Path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=json.dumps(mock_data))):
-                data = resume_service.get_resume_data()
-                assert data == mock_data
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", mock_open(read_data=json.dumps(mock_data))),
+        ):
+            data = resume_service.get_resume_data()
+            assert data == mock_data
 
     @patch("job_genie.core.resume_service.PDFResumeParser")
     def test_get_resume_data_pdf_parse(self, mock_parser_cls, resume_service):
@@ -51,13 +53,15 @@ class TestResumeService:
 
     def test_get_resume_data_cache_corrupt(self, resume_service):
         """Test that get_resume_data handles corrupted cache by falling back to PDF."""
-        with patch("pathlib.Path.exists", return_value=True):
-            # First call for cache exists, second call for PDF exists
-            with patch("builtins.open", side_effect=[Exception("Read error"), mock_open().return_value]):
-                with patch.object(resume_service, "_parse_pdf_to_json") as mock_parse:
-                    mock_parse.return_value = {"from": "pdf"}
-                    data = resume_service.get_resume_data()
-                    assert data == {"from": "pdf"}
+        # First call for cache exists, second call for PDF exists
+        with (
+            patch("pathlib.Path.exists", return_value=True),
+            patch("builtins.open", side_effect=[Exception("Read error"), mock_open().return_value]),
+            patch.object(resume_service, "_parse_pdf_to_json") as mock_parse,
+        ):
+            mock_parse.return_value = {"from": "pdf"}
+            data = resume_service.get_resume_data()
+            assert data == {"from": "pdf"}
 
     def test_get_resume_data_no_files(self, resume_service):
         """Test get_resume_data returns empty dict when no files exist."""
