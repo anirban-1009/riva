@@ -4,6 +4,8 @@ Riva Agent is an AI platform compatible with OpenClaw that manages and orchestra
 
 ## Documentation
 
+Start with the **[Product Definition](https://github.com/anirban-1009/riva/wiki/Product-Definition)** (mirrored at `docs/product-definition.md`) — what Riva is for, the v1 scope, and what is deliberately out of scope.
+
 The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading (e.g. `docs/architecture.md`, `docs/inference-latency.md`), but treat the wiki as the source of truth if the two ever drift.
 
 ## Repository Structure

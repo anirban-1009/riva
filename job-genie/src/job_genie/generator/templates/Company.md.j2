@@ -1,0 +1,23 @@
+---
+type: company
+name: {{ name | yaml }}
+industry: {{ industry | yaml }}
+location: {{ location | yaml }}
+website: {{ website | yaml }}
+tags:
+  - company
+---
+# {{ name }}
+
+## Jobs
+{% for job in jobs %}
+- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }})
+{% endfor %}
+
+## Connections
+{% for person in people %}
+- [[{{ person.filename }}|{{ person.name }}]] - {{ person.title }}
+{% endfor %}
+
+## Notes
+-

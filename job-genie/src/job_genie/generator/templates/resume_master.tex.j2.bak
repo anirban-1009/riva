@@ -1,0 +1,56 @@
+\documentclass[11pt,a4paper,sans]{moderncv}
+
+% moderncv themes
+\moderncvstyle{classic}
+\moderncvcolor{blue}
+
+% character encoding
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+
+% adjust the page margins
+\usepackage[scale=0.75]{geometry}
+
+% personal data
+\name{ {{ first_name }} }{ {{ last_name }} }
+\title{ {{ job_title }} }
+\email{ {{ email }} }
+{% if phone %}\phone[mobile]{ {{ phone }} }{% endif %}
+{% if linkedin %}\social[linkedin]{ {{ linkedin }} }{% endif %}
+{% if github %}\social[github]{ {{ github }} }{% endif %}
+{% if website %}\extrainfo{\url{ {{ website }} }}{% endif %}
+
+% content
+\begin{document}
+\makecvtitle
+
+\section{Summary}
+{{ professional_summary }}
+
+\section{Experience}
+{% for job in experience -%}
+\cventry{ {{ job.dates }} }{ {{ job.title }} }{ {{ job.company }} }{ {{ job.location }} }{}{
+\begin{itemize}
+{% for bullet in job.bullets -%}
+  \item {{ bullet }}
+{%- endfor %}
+\end{itemize}}
+{% endfor %}
+
+% Projects
+\section{Projects}
+{% for project in projects -%}
+\cventry{}{ {{ project.name }} }{ {{ project.technologies }} }{}{}{ {{ project.description }} }
+{% endfor %}
+
+\section{Skills}
+{% for category, items in skills.items() -%}
+\cvitem{ {{ category }} }{ {{ items|join(', ') }} }
+{% endfor %}
+
+\section{Education}
+{% for edu in education -%}
+\cventry{ {{ edu.dates }} }{ {{ edu.degree }} }{ {{ edu.institution }} }{ {{ edu.location }} }{}{ {{ edu.description }} }
+{% endfor %}
+
+\end{document}

@@ -1,2 +1,5 @@
+from job_genie.main import cli
+
+
 def main() -> None:
-    print("Hello from job-genie!")
+    cli()

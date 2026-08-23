@@ -9,7 +9,8 @@ wheels/
 # Virtual environments
 .venv
 
-# Local Wiki Repo
-wiki/
 .DS_Store
 config.yml
+
+# Jupyter
+.ipynb_checkpoints/

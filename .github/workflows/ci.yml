@@ -1,0 +1,35 @@
+name: Python CI
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+permissions:
+  contents: write
+
+jobs:
+  job-genie:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: 3.13
+
+    - name: Install dependencies
+      run: |
+        uv sync --package job-genie --dev
+        uv run --package job-genie playwright install --with-deps chromium
+
+    - name: Run Ruff (Lint & Format Check)
+      run: |
+        uv run --package job-genie ruff check job-genie/src job-genie/tests
+        uv run --package job-genie ruff format --check job-genie/src job-genie/tests
+
+    - name: Run Tests with Coverage
+      run: |
+        uv run --package job-genie pytest --cov=job-genie/src job-genie/tests --cov-report=xml --cov-report=term

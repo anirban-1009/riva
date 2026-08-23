@@ -1,0 +1,39 @@
+---
+type: person
+name: {{ person.full_name | yaml }}
+title: {{ person.position | yaml }}
+company: {{ person.company | yaml if person.company else 'null' }}
+connected_on: {{ person.connected_on | yaml }}
+last_contacted: {{ (person.metadata.last_contacted or 'Never') | yaml }}
+tags:
+  - network
+---
+# {{ person.full_name }}
+
+**Company:** [[{{ person.company|replace(' ', '_') if person.company else 'Unknown_Company' }}]]
+
+## Achievements
+{% for achievement in person.metadata.achievements %}
+- {{ achievement }}
+{% endfor %}
+
+## Associated Jobs
+{% for job in jobs %}
+- [[{{ job.filename }}|{{ job.title }}]] ({{ job.status }})
+{% else %}
+- No jobs found at this company.
+{% endfor %}
+
+## Referral Messages
+{% for req in referrals %}
+### Job: {{ req.job_id }} ({{ req.created_at }})
+- **Status:** {{ req.status }}
+- **Message:**
+> {{ req.message_content }}
+
+{% else %}
+- No referral messages sent to this person yet.
+{% endfor %}
+
+## Notes
+{{ person.metadata.notes or '' }}

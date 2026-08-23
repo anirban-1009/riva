@@ -1,0 +1,104 @@
+################################################################################
+# Job Hunt Mindmap - Default Configuration
+#
+# INSTRUCTIONS:
+# 1. Copy this file to `config.yaml`
+# 2. Fill in your personal details and paths.
+# 3. DO NOT commit this file if you add sensitive information.
+################################################################################
+
+# ==============================================================================
+# SECTION 1: Personal & Profile
+# ==============================================================================
+user:
+  full_name: "Your Name"
+  email: "your.email@example.com"
+
+  # Total years of professional experience (Overrides LLM resume extraction)
+  total_experience_years: 0
+
+  # Current job title/role to use in generated messages (Overrides resume.json)
+  current_role: "Software Engineer"
+
+  # Path to your Resume PDF (Used by Gemini for relevance matching)
+  resume_path: "data/resume.pdf"
+  
+  # Path to your LinkedIn Data Export (CSV)
+  # Download from: LinkedIn > Settings > Data Privacy > Get a copy of your data (Connections)
+  linkedin_connections_path: "data/Connections.csv"
+  
+  # Path to store interaction tracking (manual metadata)
+  linkedin_metadata_path: "data/network_metadata.json"
+
+# ==============================================================================
+# SECTION 2: Job Search Criteria
+# ==============================================================================
+search:
+  keywords:
+    - "Python Developer"
+    - "Backend Engineer"
+    - "Software Engineer"
+  
+  location: "United States"
+  location_type: "Remote" # Options: Remote, On-site, Hybrid, Any
+  
+  # Filters (Optional)
+  filters:
+    experience_level: ["Mid-Senior level", "Associate"]
+    job_type: ["Full-time"]
+
+# ==============================================================================
+# SECTION 3: Obsidian Integration (The Mind Map)
+# ==============================================================================
+obsidian:
+  # Absolute path to your Obsidian Vault root directory
+  vault_path: "/Users/yourname/Documents/Obsidian/MindMap"
+  
+  # Subfolder structure within Obsidian
+  folders:
+    jobs: "Jobs"
+    companies: "Companies"
+    people: "People"
+    analysis: "Analysis"
+    assets: "Assets"
+
+# ==============================================================================
+# SECTION 4: AI & Matching
+# ==============================================================================
+ai:
+  # Choose your provider: "gemini", "ollama", or "fallback" (tries Gemini then Ollama)
+  provider: "gemini"
+
+  # Integration Settings
+  matching_threshold: 70 # Minimum score (0-100) to be considered a match
+
+  # Google Gemini Settings
+  # Get your free API key at: https://aistudio.google.com/app/apikey
+  gemini:
+    api_key: "${GEMINI_API_KEY}" # Can read from env var
+    model_name: "gemini-2.0-flash-exp" # Fast and free
+    embedding_model: "text-embedding-004" # Used for `mindmap find --semantic` (768 dimensions)
+
+  # Ollama Settings (Local LLM)
+  # Download at: https://ollama.com/
+  ollama:
+    base_url: "http://localhost:11434"
+    model_name: "llama3"
+    embedding_model: "nomic-embed-text" # Used for `mindmap find --semantic` (768 dimensions; `ollama pull nomic-embed-text`)
+
+
+# ==============================================================================
+# SECTION 5: Notifications & Resume Generation
+# ==============================================================================
+notifications:
+  email:
+    enabled: true
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    smtp_user: "${SMTP_USER}"
+    smtp_password: "${SMTP_PASSWORD}"
+
+resume_generation:
+  enabled: true
+  template_path: "templates/resume_master.tex"
+  output_dir: "output/resumes"

@@ -4,6 +4,8 @@
 
 This document describes the design philosophy, layers, core systems, and interfaces for the Riva Agent platform.
 
+**Status**: `riva-agent/api/gateway.py` and `common/llm/providers.py`/`manager.py` are implemented and described below in detail. `common/memory/`, `common/profile/`, `common/llm/router.py`, and `common/interfaces/plugin.py` are **planned, not yet built** — see [Product Definition](product-definition.md) §6 for the v1 build order and why the plugin protocol (§5 below) is deferred past v1.
+
 ---
 
 ## 1. System Architecture Overview
@@ -15,9 +17,9 @@ graph TD
     User([User]) --> Orchestrator[Riva Agent Orchestrator]
 
     subgraph Core Services [Core Services - Managed by Platform]
-        Orchestrator --> LLMService[Local LLM Service]
         Orchestrator --> MemorySystem[Centralized Memory System]
         Orchestrator --> ProfileSystem[Centralized Profile System]
+        Orchestrator --> LLMService[Local LLM Service]
     end
 
     subgraph Memory Modules
@@ -73,7 +75,33 @@ The main `riva-agent` orchestrator remains intentionally "dumb" regarding domain
 
 ---
 
-## 3. Centralized Core Services
+## 3. Memory and Profile — the Load-Bearing Layer
+
+Per [Product Definition](product-definition.md) §3.2, memory and profile are the product; a Genie is a thing that reads and writes them in a domain-shaped way. Everything else in this document — the gateway, the plugin protocol — sits on top of this layer, which is why it's described first here despite being unbuilt.
+
+**Status: planned, not yet implemented.** Nothing under `common/memory/` or `common/profile/` exists in the repo yet.
+
+### Centralized Memory (`common/memory/`)
+
+A centralized state store that plugins interact with instead of maintaining private databases or separate chat histories.
+
+- **`episodic.py`**: Tracks chronological logs of interactions, conversations, and event timelines.
+- **`semantic.py`**: Knowledge store (e.g., vector database) containing factual associations and concepts. Deferred past v1 — see [Product Definition](product-definition.md) §6, "Deliberately not in v1."
+
+### Unified Profile (`common/profile/`)
+
+Maintains a centralized, unified user model accessible by all Genies. Rather than plugins storing their own copies of user preferences or traits, they read from this single source:
+
+- **Profile Fields**: Name, Goals, Preferences, Habits, Skills, Calendar, Constraints, and Long-term Objectives.
+- **Plugin Access Patterns**:
+  - **Workout Genie**: Reads fitness goals, physical constraints, and exercise habits.
+  - **Money Genie**: Reads income targets, financial constraints, and spending preferences.
+  - **Job Genie**: Reads career aspirations, resume records, and current skills.
+  - **Lighthouse Genie**: Reads learning goals, interests, and long-term planning objectives.
+
+---
+
+## 4. Core Services
 
 ### OpenAI-Compatible API Gateway (`riva-agent/api/`)
 
@@ -107,29 +135,13 @@ Central service through which all text generation and tool routing happens.
   - `chat`/`chat_async`/`chat_stream` accept an optional `think: bool | None`, forwarded to Ollama's payload only when set, so models that don't support thinking never see the field.
   - `get_capabilities(model)` queries `/api/tags` for a model's reported capabilities (e.g. `["completion", "tools", "thinking"]`), caching the full model→capabilities map for 5 minutes so the gateway isn't hitting Ollama on every chat request just to make the thinking decision.
 - **`manager.py`**: Handles prompts, token limits, system personality, and orchestration of the inference loop, exposing async and streaming (`generate_stream`) response generators.
-- **`router.py`**: Handles dynamic routing of prompts to appropriate model configurations.
-
-### Centralized Memory (`common/memory/`)
-
-A centralized state store that plugins interact with instead of maintaining private databases or separate chat histories.
-
-- **`episodic.py`**: Tracks chronological logs of interactions, conversations, and event timelines.
-- **`semantic.py`**: Knowledge store (e.g., vector database) containing factual associations and concepts.
-
-### Unified Profile (`common/profile/`)
-
-Maintains a centralized, unified user model accessible by all Genies. Rather than plugins storing their own copies of user preferences or traits, they read from this single source:
-
-- **Profile Fields**: Name, Goals, Preferences, Habits, Skills, Calendar, Constraints, and Long-term Objectives.
-- **Plugin Access Patterns**:
-  - **Workout Genie**: Reads fitness goals, physical constraints, and exercise habits.
-  - **Money Genie**: Reads income targets, financial constraints, and spending preferences.
-  - **Job Genie**: Reads career aspirations, resume records, and current skills.
-  - **Lighthouse Genie**: Reads learning goals, interests, and long-term planning objectives.
+- **`router.py`**: Handles dynamic routing of prompts to appropriate model configurations. **Planned, not yet implemented** — today the gateway routes by the `model` field directly (see [Product Definition](product-definition.md) §5); this module doesn't exist in the repo yet.
 
 ---
 
-## 4. The Plugin Protocol
+## 5. The Plugin Protocol
+
+**Status: deferred to post-v1.** Per [Product Definition](product-definition.md) §6, this interface is a design sketch, not a v1 build target: it's specified in full below before a single Genie exists, which the product definition calls out as a real risk — the confidence-score routing in particular (`can_handle` returning a float) assumes a routing model that's never been tested. The plan is to build the memory layer first, then one real Genie directly against it, then extract this protocol from what that Genie actually needed.
 
 To keep the platform extensible, every Genie must implement a unified `Plugin` interface defined under `common/interfaces/plugin.py`:
 
@@ -183,7 +195,7 @@ class Plugin(Protocol):
 
 ---
 
-## 5. Directory Structure
+## 6. Directory Structure
 
 The repository workspace is organized to clearly isolate common/shared framework utilities from domain-specific capabilities:
 
@@ -206,7 +218,7 @@ riva-agent/
 
 ---
 
-## 6. Genie Roles and Responsibilities
+## 7. Genie Roles and Responsibilities
 
 Each package is dedicated to a specific domain:
 
@@ -219,7 +231,7 @@ Each package is dedicated to a specific domain:
 
 ---
 
-## 7. Request Resolution Examples
+## 8. Request Resolution Examples
 
 ### Example A: Multi-Domain Request
 
@@ -281,7 +293,7 @@ User Request
 
 ---
 
-## 8. Deployment, Docker & Versioning
+## 9. Deployment, Docker & Versioning
 
 ### Container Setup
 
