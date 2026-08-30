@@ -1,0 +1,20 @@
+query,expected_actions,predicted_actions,is_compound,facts_to_store,search_queries,latency_ms,status
+I just got promoted to staff engineer at Stripe.,STORE_FACT,STORE_FACT,False,I just got promoted to staff engineer at Stripe.,,2.517,PASS
+im currently based in Berlin and working remotely,STORE_FACT,STORE_FACT,False,im currently based in Berlin and working remotely,,1.618,PASS
+We dogfood our own SDK internally.,STORE_FACT,STORE_FACT,False,We dogfood our own SDK internally.,,1.223,PASS
+me and my team use redis for session caching,STORE_FACT,STORE_FACT,False,me and my team use redis for session caching,,1.603,PASS
+ive sharded our mongo cluster across 3 nodes,STORE_FACT,STORE_FACT,False,ive sharded our mongo cluster across 3 nodes,,1.608,PASS
+My daughter has severe peanut allergies.,STORE_FACT,STORE_FACT,False,My daughter has severe peanut allergies.,,1.374,PASS
+What is the best way to handle auth tokens in FastAPI?,SEARCH_OR_ANSWER,SEARCH_OR_ANSWER,False,,What is the best way to handle auth tokens in FastAPI?,2.046,PASS
+Should I migrate from Redis to DragonFly?,SEARCH_OR_ANSWER,SEARCH_OR_ANSWER,False,,Should I migrate from Redis to DragonFly?,1.165,PASS
+Can you check if my configuration is valid?,SEARCH_OR_ANSWER,SEARCH_OR_ANSWER,False,,Can you check if my configuration is valid?,1.273,PASS
+What port does the metrics agent run on?,SEARCH_OR_ANSWER,SEARCH_OR_ANSWER,False,,What port does the metrics agent run on?,1.536,PASS
+Explain to me how consistent hashing works.,DIRECT,DIRECT,False,,,1.191,PASS
+Show me the latest production error logs.,DIRECT,DIRECT,False,,,1.402,PASS
+Give us 5 design patterns for event-driven systems.,DIRECT,DIRECT,False,,,2.072,PASS
+Refactor this SQL query to use an inner join.,DIRECT,DIRECT,False,,,1.346,PASS
+"That makes sense, thanks!",DIRECT,DIRECT,False,,,1.423,PASS
+"im using postgres, what is the best indexing strategy for uuid?",STORE_FACT | SEARCH_OR_ANSWER,STORE_FACT | SEARCH_OR_ANSWER,True,im using postgres,what is the best indexing strategy for uuid?,1.913,PASS
+Our backend runs on GCP. How do we configure Cloud Run autoscaling?,STORE_FACT | SEARCH_OR_ANSWER,STORE_FACT | SEARCH_OR_ANSWER,True,Our backend runs on GCP.,How do we configure Cloud Run autoscaling?,1.926,PASS
+Our database is SQLite. Write a Python script to back it up daily.,STORE_FACT | DIRECT,STORE_FACT | DIRECT,True,Our database is SQLite.,,1.612,PASS
+"I am building a fintech app on AWS, what is the recommended way to handle idempotency?",STORE_FACT | SEARCH_OR_ANSWER,STORE_FACT | SEARCH_OR_ANSWER,True,I am building a fintech app on AWS,what is the recommended way to handle idempotency?,1.942,PASS
