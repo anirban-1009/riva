@@ -13,3 +13,8 @@ wheels/
 wiki/
 .DS_Store
 config.yml
+job-genie/data/
+job-genie/output/
+.env
+config.yaml
+.ipynb_checkpoints/

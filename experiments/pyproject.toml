@@ -7,7 +7,13 @@ authors = [
     { name = "Anirban Sikdar", email = "anirban9293@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "jupyter>=1.1.1",
+    "mem0ai[extras]>=2.0.19",
+    "numpy>=2.5.2",
+    "ollama>=0.6.2",
+    "sentence-transformers>=6.0.0",
+]
 
 [project.scripts]
 experiments = "experiments:main"
