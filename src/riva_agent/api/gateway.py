@@ -11,7 +11,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
-from common.llm.providers import OllamaProvider
+from common.llm.providers import LLMProvider, OllamaProvider, create_provider
 from riva_agent import config
 from riva_agent.models.data import (
     AssistantMessage,
@@ -43,16 +43,19 @@ _HEARTBEAT_INTERVAL_S = 15.0
 
 
 async def stream_generator(
-    provider: OllamaProvider,
+    provider: LLMProvider,
     messages: list[dict[str, str]],
     model: str,
     request_id: str,
     created_time: int,
-    options: dict[str, Any],
+    temperature: float | None,
+    max_tokens: int | None,
     think: bool | None,
 ) -> AsyncGenerator[str, None]:
     """Generate server-sent events for chat completion chunks."""
-    token_iter = provider.chat_stream(messages, options=options, think=think).__aiter__()
+    token_iter = provider.chat_stream(
+        messages, temperature=temperature, max_tokens=max_tokens, think=think
+    ).__aiter__()
     pending: asyncio.Task[str] | None = None
     try:
         role_chunk = Chunk(
@@ -122,17 +125,13 @@ async def stream_generator(
 
 @app.get("/v1/models")
 async def list_models() -> dict[str, Any]:
-    """List available local Ollama models in OpenAI-compatible format."""
-    provider = OllamaProvider()
+    """List available models from the configured backend in OpenAI-compatible format."""
+    provider = create_provider(
+        config.PROVIDER, base_url=config.OPENAI_BASE_URL, api_key=config.OPENAI_API_KEY
+    )
     try:
-        client = provider._get_client()
-        response = await client.get(f"{provider.base_url}/api/tags")
-        response.raise_for_status()
-        ollama_models = response.json().get("models", [])
-
-        models = [
-            Model(id=model["name"], created=int(time.time())) for model in ollama_models
-        ]
+        model_ids = await provider.list_models()
+        models = [Model(id=model_id, created=int(time.time())) for model_id in model_ids]
         return asdict(ModelList(data=models))
     except Exception as e:
         logger.exception("list_models failed")
@@ -142,6 +141,10 @@ async def list_models() -> dict[str, Any]:
 @app.post("/api/show")
 async def show_model(request: dict[str, Any]) -> Any:
     """Proxy Ollama's native /api/show so Ollama-aware clients can query model metadata."""
+    if config.PROVIDER != "ollama":
+        raise HTTPException(
+            status_code=501, detail="/api/show is only available with the Ollama provider"
+        )
     provider = OllamaProvider()
     client = provider._get_client()
     try:
@@ -160,17 +163,19 @@ async def show_model(request: dict[str, Any]) -> Any:
 async def chat_completions(request: ChatCompletionRequest) -> Any:
     """Handle chat completion requests, supporting streaming and non-streaming modes."""
     model = config.MODEL or request.model
-    provider = OllamaProvider(model=model)
+    provider = create_provider(
+        config.PROVIDER,
+        model=model,
+        base_url=config.OPENAI_BASE_URL,
+        api_key=config.OPENAI_API_KEY,
+    )
 
     messages_payload = [
         {"role": msg.role, "content": msg.content} for msg in request.messages
     ]
 
-    options = {}
-    if request.temperature is not None:
-        options["temperature"] = request.temperature
-    if request.max_tokens is not None:
-        options["num_predict"] = request.max_tokens
+    temperature = request.temperature
+    max_tokens = request.max_tokens
 
     request_id = f"chatcmpl-{uuid.uuid4()}"
     created_time = int(time.time())
@@ -202,14 +207,17 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
                 model,
                 request_id,
                 created_time,
-                options,
+                temperature,
+                max_tokens,
                 think,
             ),
             media_type="text/event-stream",
         )
 
     try:
-        content = await provider.chat_async(messages_payload, options=options, think=think)
+        content = await provider.chat_async(
+            messages_payload, temperature=temperature, max_tokens=max_tokens, think=think
+        )
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,
