@@ -4,7 +4,11 @@ Riva Agent is an AI platform compatible with OpenClaw that manages and orchestra
 
 ## Documentation
 
-The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading (e.g. `docs/architecture.md`, `docs/inference-latency.md`), but treat the wiki as the source of truth if the two ever drift.
+The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading:
+- **[Development Timeline](docs/development_timeline.md)**: Phased roadmap and milestone schedule from foundation through v1 and post-v1.
+- **[Local Dev Runbook](docs/local-dev-runbook.md)**: Command reference for starting, health-checking, and recovering the local dev stack.
+- **[Architecture](docs/architecture.md)**: System design philosophy, layers, and core interfaces.
+- **[Inference Latency Investigation](docs/inference-latency.md)**: Root causes, benchmarks, and gateway configuration controls.
 
 ## Repository Structure
 
@@ -67,10 +71,34 @@ View workspace dependency tree:
 uv tree
 ```
 
-Run the main application:
+### Local Dev Stack Automation
+
+Run the full local stack (MLX inference backend + Riva AI Gateway + OpenClaw check):
 
 ```bash
-uv run --package riva-agent python -m riva_agent
+# Start all services (background)
+./scripts/start_stack.sh start
+
+# Start in Dev mode (foreground gateway with auto-reload on src/ & common/)
+./scripts/start_stack.sh dev
+
+# Check status of ports (8081, 8085) and services
+./scripts/start_stack.sh status
+
+# Follow logs (~/.riva/logs/)
+./scripts/start_stack.sh logs
+
+# Start stack and launch OpenClaw terminal chat
+./scripts/start_stack.sh chat
+
+# Stop the stack
+./scripts/start_stack.sh stop
+```
+
+Run the main application manually:
+
+```bash
+uv run --package riva-agent uvicorn riva_agent.api.gateway:app --host 0.0.0.0 --port 8085
 ```
 
 Run an individual package:
