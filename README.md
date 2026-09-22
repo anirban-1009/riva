@@ -5,10 +5,12 @@ Riva Agent is an AI platform compatible with OpenClaw that manages and orchestra
 ## Documentation
 
 The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading:
+- **[Product Definition](docs/product-definition.md)**: Product statement, v1 scope, principles, and non-goals.
 - **[Development Timeline](docs/development_timeline.md)**: Phased roadmap and milestone schedule from foundation through v1 and post-v1.
 - **[Local Dev Runbook](docs/local-dev-runbook.md)**: Command reference for starting, health-checking, and recovering the local dev stack.
 - **[Architecture](docs/architecture.md)**: System design philosophy, layers, and core interfaces.
 - **[Inference Latency Investigation](docs/inference-latency.md)**: Root causes, benchmarks, and gateway configuration controls.
+- **[MLX Server Evaluation](docs/mlx-server-evaluation.md)**: Local model memory benchmarks and MLX serving evaluation.
 
 ## Repository Structure
 

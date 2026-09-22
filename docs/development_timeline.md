@@ -1,6 +1,8 @@
 # Riva Agent: Development Timeline & Roadmap
 
-Based on the canonical specifications in [Product-Definition.md](file:///Users/anirban/Personal/riva/wiki/Product-Definition.md) and [Architecture.md](file:///Users/anirban/Personal/riva/wiki/Architecture.md), this document outlines a phased development timeline to deliver Riva as a private, persistent personal assistant.
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/Development-Timeline) — the wiki is the canonical source; update it first.
+
+Based on the canonical specifications in the [Product Definition](https://github.com/anirban-1009/riva/wiki/Product-Definition) and [Architecture](architecture.md), this document outlines a phased development timeline to deliver Riva as a private, persistent personal assistant.
 
 ---
 
@@ -72,7 +74,7 @@ gantt
   - Chronological session and turn logging in SQLite (`~/.riva/memory.db`).
   - Recency-based windowing (retrieving the most recent $N$ conversational turns).
 - **Syntactic Pre-Router (`common/memory/router.py`)**:
-  - Based on the [NLP Memory Routing findings](file:///Users/anirban/Personal/riva/wiki/NLP-Memory-Routing-Learnings-and-Pitfalls.md).
+  - Based on the [NLP Memory Routing findings](https://github.com/anirban-1009/riva/wiki/NLP-Memory-Routing-Learnings-and-Pitfalls).
   - Lightweight spaCy dependency parsing (~1.6ms CPU latency).
   - Suppress memory writes on imperative commands ("Explain Docker").
   - Detect first-person declarations (`nsubj` / `poss` relations: "I use Postgres").
