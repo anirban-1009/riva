@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 @dataclass
@@ -12,6 +13,24 @@ class Delta:
 class ChatMessage(BaseModel):
     role: str
     content: str
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _flatten_content_parts(cls, value: Any) -> Any:
+        """Accept OpenAI's multimodal content-parts array (used by clients like
+        the Vercel AI SDK even for plain text) and flatten it to a string.
+
+        Only text parts are kept since no configured provider handles
+        image/audio inputs yet; other part types are silently dropped rather
+        than rejecting the whole request.
+        """
+        if isinstance(value, list):
+            return "".join(
+                part.get("text", "")
+                for part in value
+                if isinstance(part, dict) and part.get("type") == "text"
+            )
+        return value
 
 
 class ChatCompletionRequest(BaseModel):
