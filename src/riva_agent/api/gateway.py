@@ -25,7 +25,7 @@ from riva_agent.models.data import (
     ModelList,
     StreamChoice,
 )
-from riva_agent.reasoning import (
+from riva_agent.intelligence.reasoning import (
     HybridDecision,
     ReasoningEffort,
     decide_reasoning_effort,

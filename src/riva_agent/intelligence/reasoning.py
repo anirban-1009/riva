@@ -213,7 +213,7 @@ class ThinkingRouter:
                         for p in content
                         if isinstance(p, dict) and p.get("type") == "text"
                     ]
-                    user_query = " ".join(parts)
+                    user_query = "".join(parts)
                 break
 
         if not user_query.strip():

@@ -37,6 +37,32 @@ lighthouse-genie = { workspace = true }
 requires = ["uv_build>=0.11.8,<0.12.0"]
 build-backend = "uv_build"
 
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=riva_agent --cov-report=term-missing"
+
+[tool.coverage.run]
+source = ["src/riva_agent"]
+branch = true
+omit = [
+    "*/__pycache__/*",
+    "*/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
 [tool.commitizen]
 version_provider = "pep621"
 version_scheme = "semver2"
