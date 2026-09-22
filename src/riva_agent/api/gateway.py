@@ -3,6 +3,7 @@ import json
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, AsyncGenerator
@@ -24,17 +25,36 @@ from riva_agent.models.data import (
     ModelList,
     StreamChoice,
 )
-from riva_agent.reasoning import should_use_extended_thinking
+from riva_agent.reasoning import (
+    HybridDecision,
+    ReasoningEffort,
+    decide_reasoning_effort,
+    get_thinking_router,
+)
 
 try:
     __version__ = version("riva-agent")
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
-app = FastAPI(title="Riva Agent AI Gateway", version=__version__)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-warm ThinkingRouter at startup so initial requests don't pay model load latency."""
+    if config.THINKING_ENABLED:
+        try:
+            logger.info("Pre-warming ThinkingRouter (spaCy + Laya MLX)...")
+            await asyncio.to_thread(get_thinking_router)
+            logger.info("ThinkingRouter pre-warmed successfully.")
+        except Exception as e:
+            logger.warning("Failed to pre-warm ThinkingRouter: %s", e)
+    yield
+
+
+app = FastAPI(title="Riva Agent AI Gateway", version=__version__, lifespan=lifespan)
 
 
 # How often to emit an SSE comment while waiting for the next token, so
@@ -50,13 +70,13 @@ async def stream_generator(
     created_time: int,
     temperature: float | None,
     max_tokens: int | None,
-    think: bool | None,
+    think: Any = None,
 ) -> AsyncGenerator[str, None]:
     """Generate server-sent events for chat completion chunks."""
     token_iter = provider.chat_stream(
         messages, temperature=temperature, max_tokens=max_tokens, think=think
     ).__aiter__()
-    pending: asyncio.Task[str] | None = None
+    pending: asyncio.Task[Any] | None = None
     try:
         role_chunk = Chunk(
             id=request_id,
@@ -64,7 +84,11 @@ async def stream_generator(
             model=model,
             choices=[StreamChoice(delta=Delta(role="assistant"))],
         )
-        yield f"data: {json.dumps(asdict(role_chunk))}\n\n"
+        role_dict = asdict(role_chunk)
+        role_dict["choices"][0]["delta"] = {
+            k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None
+        }
+        yield f"data: {json.dumps(role_dict)}\n\n"
 
         while True:
             if pending is None:
@@ -81,18 +105,31 @@ async def stream_generator(
 
             task, pending = pending, None
             try:
-                token = task.result()
+                token_item = task.result()
             except StopAsyncIteration:
                 break
+
+            if isinstance(token_item, tuple):
+                kind, token_text = token_item
+            else:
+                kind, token_text = "content", token_item
+
+            if kind == "reasoning":
+                delta = Delta(reasoning_content=token_text, reasoning=token_text)
+            else:
+                delta = Delta(content=token_text)
 
             chunk = Chunk(
                 id=request_id,
                 created=created_time,
                 model=model,
-                choices=[StreamChoice(delta=Delta(content=token))],
+                choices=[StreamChoice(delta=delta)],
             )
-
-            yield f"data: {json.dumps(asdict(chunk))}\n\n"
+            chunk_dict = asdict(chunk)
+            chunk_dict["choices"][0]["delta"] = {
+                k: v for k, v in chunk_dict["choices"][0]["delta"].items() if v is not None
+            }
+            yield f"data: {json.dumps(chunk_dict)}\n\n"
 
         done_chunk = Chunk(
             id=request_id,
@@ -100,8 +137,11 @@ async def stream_generator(
             model=model,
             choices=[StreamChoice(index=0, finish_reason="stop")],
         )
-
-        yield f"data: {json.dumps(asdict(done_chunk))}\n\n"
+        done_dict = asdict(done_chunk)
+        done_dict["choices"][0]["delta"] = {
+            k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None
+        }
+        yield f"data: {json.dumps(done_dict)}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
         logger.exception("stream_generator failed request_id=%s model=%s", request_id, model)
@@ -182,21 +222,33 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
 
     stream = request.stream and config.STREAMING_ENABLED
 
+    # Extract only the latest user query so previous history does not pollute the router
+    user_query = ""
+    for msg in reversed(request.messages):
+        if msg.role == "user":
+            user_query = msg.content
+            break
+
     capabilities = await provider.get_capabilities(model)
-    if "thinking" not in capabilities:
-        think = None
-    elif not config.THINKING_ENABLED:
-        # Explicit False, not None: some models (e.g. gemma4) default to
-        # thinking on when the field is omitted entirely.
-        think = False
+    decision: HybridDecision | None = None
+    effort: ReasoningEffort = ReasoningEffort.NONE
+
+    if not config.THINKING_ENABLED or not user_query.strip():
+        effort = ReasoningEffort.NONE
+    elif "thinking" in capabilities or config.PROVIDER == "openai_compatible":
+        decision = await asyncio.to_thread(decide_reasoning_effort, user_query)
+        effort = decision.effort_level
     else:
-        think = should_use_extended_thinking(messages_payload)
+        effort = ReasoningEffort.NONE
+
     logger.info(
-        "chat_completions request_id=%s model=%s stream=%s think=%s",
+        "chat_completions request_id=%s model=%s stream=%s effort=%s source=%s router_ms=%.2f",
         request_id,
         model,
         stream,
-        think,
+        effort.value,
+        decision.source if decision else ("disabled" if not config.THINKING_ENABLED else "no_capability"),
+        decision.latency_ms if decision else 0.0,
     )
 
     if stream:
@@ -209,14 +261,14 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
                 created_time,
                 temperature,
                 max_tokens,
-                think,
+                effort,
             ),
             media_type="text/event-stream",
         )
 
     try:
         content = await provider.chat_async(
-            messages_payload, temperature=temperature, max_tokens=max_tokens, think=think
+            messages_payload, temperature=temperature, max_tokens=max_tokens, think=effort
         )
         response = ChatCompletionResponse(
             id=request_id,

@@ -13,6 +13,7 @@ dependencies = [
     "fastapi>=0.111.0",
     "uvicorn>=0.30.0",
     "pyyaml>=6.0",
+    "laya-mlx>=0.2.0",
 ]
 
 [tool.uv.workspace]
