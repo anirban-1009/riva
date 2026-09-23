@@ -28,7 +28,11 @@ class HybridDecision:
 class ThinkingRouter:
 
     def __init__(self, spacy_model: str = "en_core_web_sm"):
-        self.nlp = spacy.load(spacy_model, exclude=["ner"])
+        try:
+            self.nlp = spacy.load(spacy_model, exclude=["ner"])
+        except OSError:
+            spacy.cli.download(spacy_model)
+            self.nlp = spacy.load(spacy_model, exclude=["ner"])
 
         # Stage 1: Fast Regex Patterns
         self.social_openers = re.compile(

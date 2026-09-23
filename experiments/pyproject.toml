@@ -13,6 +13,7 @@ dependencies = [
     "mem0ai[extras]>=2.0.19",
     "numpy>=2.5.2",
     "ollama>=0.6.2",
+    "pandas>=3.0.6",
     "sentence-transformers>=6.0.0",
     "spacy>=3.8.16",
 ]
