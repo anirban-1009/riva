@@ -14,6 +14,9 @@ dependencies = [
     "uvicorn>=0.30.0",
     "pyyaml>=6.0",
     "laya-mlx>=0.2.0",
+    "spacy>=3.8.0",
+    "numpy>=1.26.0",
+    "en-core-web-sm",
 ]
 
 [tool.uv.workspace]
@@ -32,6 +35,7 @@ job-genie = { workspace = true }
 money-genie = { workspace = true }
 workout-genie = { workspace = true }
 lighthouse-genie = { workspace = true }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
 
 [build-system]
 requires = ["uv_build>=0.11.8,<0.12.0"]
@@ -43,13 +47,6 @@ dev = [
     "pytest-asyncio>=1.4.0",
     "pytest-cov>=7.1.0",
 ]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-addopts = "--cov=riva_agent --cov-report=term-missing"
 
 [tool.coverage.run]
 source = ["src/riva_agent"]
