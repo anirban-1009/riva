@@ -1,5 +1,7 @@
 # NLP Memory Routing: Consolidated Learnings, Deviations, and Pitfalls
 
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/NLP-Memory-Routing-Learnings-And-Pitfalls) — the wiki is the canonical source; update it first.
+
 ## Summary
 
 The routing problem is to dispatch each user turn efficiently across three paths:
@@ -10,13 +12,13 @@ The routing problem is to dispatch each user turn efficiently across three paths
 | `SEARCH_OR_ANSWER` | Retrieve relevant memory and answer a question. |
 | `DIRECT` | Handle commands, tasks, and casual requests without memory writes or retrieval. |
 
-The central learning is that this is primarily a **syntactic intent problem**, not a semantic-topic classification problem. A lightweight spaCy dependency parser was the most suitable pre-router because it distinguishes who is performing an action from who is receiving one—critical for separating “I use Docker” from “Explain Docker to me.”
+The central learning is that this is primarily a **syntactic intent problem**, not a semantic-topic classification problem. A lightweight spaCy dependency parser was the most suitable pre-router because it distinguishes who is performing an action from who is receiving one—critical for separating "I use Docker" from "Explain Docker to me."
 
 ## What Was Learned
 
 ### 1. Embeddings are poorly aligned with grammatical routing intent
 
-Centroid and nearest-neighbor embedding approaches detect sentence topic more strongly than operational intent. For example, “I use Docker” and “Explain Docker to me” are semantically close despite needing different routing outcomes.
+Centroid and nearest-neighbor embedding approaches detect sentence topic more strongly than operational intent. For example, "I use Docker" and "Explain Docker to me" are semantically close despite needing different routing outcomes.
 
 - Averaged intent centroids suffer from topic dilution, producing weak and unstable similarity scores.
 - 1-NN exemplar matching improves specificity but still confuses topical similarity with subject/object role.
@@ -24,7 +26,7 @@ Centroid and nearest-neighbor embedding approaches detect sentence topic more st
 
 ### 2. Zero-shot NLI generalizes but is too costly for the hot path
 
-Transformer-based NLI can classify varied phrasing, but its CPU inference latency is materially higher than dependency parsing and is sensitive to candidate-label wording. Generic labels such as “request for information” can attract unrelated declarative inputs.
+Transformer-based NLI can classify varied phrasing, but its CPU inference latency is materially higher than dependency parsing and is sensitive to candidate-label wording. Generic labels such as "request for information" can attract unrelated declarative inputs.
 
 It is better suited as an optional fallback for uncertain cases, offline evaluation, or later-stage validation—not the default per-turn router.
 
@@ -37,13 +39,13 @@ A fact is eligible for `STORE_FACT` only when a first-person reference is:
 - the nominal subject (`nsubj` / `nsubjpass`) of a predicate, or
 - a possessive modifier (`poss`) within a subject noun phrase tied to a predicate.
 
-This prevents false writes from commands such as “Tell me a joke” or “Send us the report.” The reported working implementation achieved a 19/19 test pass rate with mean latency of 1.62 ms on CPU; those figures should be re-benchmarked in the target deployment environment.
+This prevents false writes from commands such as "Tell me a joke" or "Send us the report." The reported working implementation achieved a 19/19 test pass rate with mean latency of 1.62 ms on CPU; those figures should be re-benchmarked in the target deployment environment.
 
 ### 4. Compound inputs need independent routing
 
 A single turn may contain both durable context and a question:
 
-> “I’m using Postgres; what is the best indexing strategy for UUIDs?”
+> "I'm using Postgres; what is the best indexing strategy for UUIDs?"
 
 The router must split this into separate propositions so it can asynchronously store the fact while retrieving context and answering the question. Treating the whole turn as one question loses the first clause.
 
@@ -62,7 +64,7 @@ Real user input includes unpunctuated contractions and technical slang. The robu
 | Intent model | Embedding centroids, 1-NN, then zero-shot NLI | Deterministic dependency parsing |
 | Tokenizer rules | One version passed `LEMMA` and `POS` | Uses spaCy v3-compatible `ORTH` and `NORM` only |
 | Compound splitting | Dependency-subtree splitting, which can be broad/overlapping | Conservative punctuation/coordinator splitting for independent propositions |
-| Imperatives with embedded Wh-clauses | Could split “Explain to me how…” and misread `how` as a question | Detects root imperatives and keeps them `DIRECT` |
+| Imperatives with embedded Wh-clauses | Could split "Explain to me how…" and misread `how` as a question | Detects root imperatives and keeps them `DIRECT` |
 | Fact qualification | First-person subject/possessive checks | Same core idea, packaged into explicit first-person-declarative detection |
 | Hypotheticals and indirect questions | One iteration added guards for conditionals and epistemic verbs | Final version should retain these guards if they are production requirements |
 | Payload cleanup | One version removed connectors/punctuation | Final implementation should preserve equivalent cleanup before persistence |
@@ -71,7 +73,7 @@ Real user input includes unpunctuated contractions and technical slang. The robu
 
 ### Topic-based classification causes memory corruption
 
-If the system stores facts based on semantic similarity or loose pronoun matching, task requests containing “me” or “us” become false memory writes. Memory pollution is worse than an occasional missed fact because it can affect future responses.
+If the system stores facts based on semantic similarity or loose pronoun matching, task requests containing "me" or "us" become false memory writes. Memory pollution is worse than an occasional missed fact because it can affect future responses.
 
 ### Whole-message classification loses multi-intent context
 
@@ -79,7 +81,7 @@ A trailing `?` should not cause the preceding declarative clause to disappear. R
 
 ### Embedded Wh-clauses are not necessarily questions
 
-“Explain to me how consistent hashing works” is a command, not a retrieval query. Imperative detection must run before Wh-word logic or clause splitting.
+"Explain to me how consistent hashing works" is a command, not a retrieval query. Imperative detection must run before Wh-word logic or clause splitting.
 
 ### spaCy tokenizer special cases have version-specific constraints
 
@@ -87,11 +89,11 @@ In spaCy v3+, tokenizer exceptions cannot safely specify post-tokenization lingu
 
 ### Small models mis-tag jargon
 
-Terms such as “dogfood,” “containerize,” or domain-specific verbs may not receive `VERB` tags. A strict POS-only predicate detector will miss real facts; structural fallback checks are needed.
+Terms such as "dogfood," "containerize," or domain-specific verbs may not receive `VERB` tags. A strict POS-only predicate detector will miss real facts; structural fallback checks are needed.
 
 ### Not every first-person statement is durable memory
 
-The routing decision identifies a declarative statement, not necessarily a fact worth retaining. Examples such as “I am looking at line 5” may be temporary debugging context. Add a downstream memory-worthiness filter, TTL policy, or lightweight fact extractor before persistence.
+The routing decision identifies a declarative statement, not necessarily a fact worth retaining. Examples such as "I am looking at line 5" may be temporary debugging context. Add a downstream memory-worthiness filter, TTL policy, or lightweight fact extractor before persistence.
 
 ### Writes require deduplication and lifecycle rules
 
@@ -105,7 +107,7 @@ Do not blindly append every detected fact. Compare against existing memory, upda
 4. Classify each span as `STORE_FACT`, `SEARCH_OR_ANSWER`, or `DIRECT`.
 5. Send eligible facts through a durability and deduplication layer, then write asynchronously.
 6. Retrieve memory only for `SEARCH_OR_ANSWER` spans.
-7. Build the final LLM prompt using retrieved context plus the user’s actual request.
+7. Build the final LLM prompt using retrieved context plus the user's actual request.
 8. Log decisions, confidence signals, latency, and false-positive/false-negative examples for regression testing.
 
 ## Final Recommendation

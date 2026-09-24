@@ -17,7 +17,7 @@ gantt
   M0 - Gateway Hardening & Guard              :active, m0, 2026-09-22, 4d
   M1 - Central Profile Store (SQLite)         :m1, after m0, 5d
   M2 - Episodic Memory & Router               :m2, after m1, 7d
-  M3 - Trust Surface & CLI                    :m3, after m2, 5d
+  M3 - Trust Surface, Storage & CLI           :m3, after m2, 5d
   v1 Checkpoint & Privacy Check               :crit, v1_done, after m3, 2d
   M4 - Semantic Recall (sqlite-vec)           :m4, after v1_done, 7d
   M5 - Proactive Digests (macOS)              :m5, after m4, 5d
@@ -70,9 +70,11 @@ gantt
 **Estimated Duration**: ~6–7 Days  
 **Primary Focus**: Conversation recording, recency retrieval, and deterministic fact admission.
 
-- **Episodic Conversation Store**:
+- **Episodic Conversation Store & Retention Primitives**:
   - Chronological session and turn logging in SQLite (`~/.riva/memory.db`).
   - Recency-based windowing (retrieving the most recent $N$ conversational turns).
+  - Storage retention primitives: programmatic API for turn pruning by age (`prune_turns(older_than_days)`) and automatic 7-day expiration of unreviewed pending memories per §6 (`expire_pending(max_age_days=7)`).
+  - SQLite WAL mode configuration and connection hygiene (`PRAGMA journal_mode=WAL`, `PRAGMA synchronous=NORMAL`, `PRAGMA busy_timeout=5000`).
 - **Syntactic Pre-Router (`common/memory/router.py`)**:
   - Based on the [NLP Memory Routing findings](https://github.com/anirban-1009/riva/wiki/NLP-Memory-Routing-Learnings-and-Pitfalls).
   - Lightweight spaCy dependency parsing (~1.6ms CPU latency).
@@ -87,9 +89,9 @@ gantt
 
 ---
 
-### Phase 4: Trust Surface & CLI — v1 Ship (M3)
+### Phase 4: Trust Surface, Storage Management & CLI — v1 Ship (M3)
 **Estimated Duration**: ~4–5 Days  
-**Primary Focus**: User-facing trust, transparency, and the primary personal interface.
+**Primary Focus**: User-facing trust, storage lifecycle management, and the primary personal interface.
 
 - **Terminal Interface (`riva ask`)**:
   - Command-line conversation using the assistant pipeline (`riva ask "<prompt>"`).
@@ -100,12 +102,29 @@ gantt
   - `riva memory forget <id>`: Immediate, permanent removal of erroneous or stale facts.
 - **Profile CLI**:
   - `riva profile show` and `riva profile edit` (opens `$EDITOR`).
+  - `riva profile list`, `set`, and `delete` commands for quick inspection and adjustment.
+- **Storage Management & Local Hygiene (`riva storage`)**:
+  - **Disk & Table Telemetry (`riva storage status`)**:
+    - Surface file sizes for `profile.db`, `memory.db`, active WAL/SHM files, row counts for turns, facts, pending queue, and total log footprint in `~/.riva/logs/`.
+  - **Compaction & WAL Checkpointing (`riva storage vacuum`)**:
+    - Execute `VACUUM` and `PRAGMA wal_checkpoint(TRUNCATE)` across databases to reclaim free pages and keep WAL files compact.
+  - **Retention & Turn Pruning (`riva storage prune`)**:
+    - Prune raw conversation turns older than retention window (default: 30 days, configurable via `--turns-older-than <days>`) while preserving durable profile facts.
+    - Automatic purge of unreviewed pending memory candidates older than 7 days (fulfilling §6).
+    - Support `--dry-run` to preview reclaimed storage before executing deletion.
+  - **Online Snapshots & Backup (`riva storage backup`)**:
+    - Non-blocking online snapshot using SQLite `VACUUM INTO` to `~/.riva/backups/riva-backup-<timestamp>.db` for reliable point-in-time recovery and device migration.
+- **Log Management & Bounded Rotation**:
+  - Size-capped log rotation (max 50MB per log, retain 3 rotations) for `~/.riva/logs/` (`gateway.log`, `mlx_server.log`) to prevent unbounded local disk consumption on developer machines.
 - **v1 Acceptance Sign-Off**:
   - [x] Profile persists across restarts.
   - [x] Episodic conversations survive restarts.
   - [x] Recall works in fresh sessions without restating facts.
   - [x] Pass-through mode remains untouched.
   - [x] Memory is inspectable and correctable (`list` / `forget`).
+  - [ ] Storage lifecycle: Compaction (`vacuum`), turn pruning, and 7-day pending candidate expiry verified.
+  - [ ] Log bounds: Gateway and daemon log rotation prevents unbounded disk growth.
+  - [ ] Disaster recovery: Online snapshot backup and restore verified via CLI.
   - [x] Privacy audit: Zero outbound network traffic during assistant sessions.
 
 ---
@@ -117,8 +136,9 @@ gantt
 - **Local Embeddings Only**:
   - Local embedding model (e.g. `nomic-embed-text` via Ollama or local MLX).
   - Zero cloud embedding APIs (preserving Principle 3.1).
-- **Vector Storage**:
+- **Vector Storage & Space Budgeting**:
   - Integrate `sqlite-vec` extension into the existing SQLite store (no extra database processes).
+  - Storage budgeting and compaction policies for dense vector embeddings and index structures.
 - **Hybrid Retrieval**:
   - Combine profile constraints + recent conversation turns + top-$k$ semantic facts.
   - Deduplication and conflict detection.
@@ -159,7 +179,7 @@ gantt
 | **Phase 1** | **M0** | Gateway Hardening, SSE Contracts, Pass-through / Assistant Routing | Week 1 (Days 1–4) |
 | **Phase 2** | **M1** | Persistent User Profile (SQLite + Prompt Injection) | Week 1–2 (Days 5–9) |
 | **Phase 3** | **M2** | Episodic Memory & spaCy Syntactic Router | Week 2–3 (Days 10–16) |
-| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory list/forget`) $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) |
+| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) |
 | **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) |
