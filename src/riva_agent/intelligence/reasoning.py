@@ -3,7 +3,6 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
-import laya_mlx as laya
 import numpy as np
 import spacy
 
@@ -27,7 +26,7 @@ class HybridDecision:
 
 class ThinkingRouter:
 
-    def __init__(self, spacy_model: str = "en_core_web_sm"):
+    def __init__(self, spacy_model: str = "en_core_web_sm", enable_laya: bool = False):
         try:
             self.nlp = spacy.load(spacy_model, exclude=["ner"])
         except OSError:
@@ -69,7 +68,7 @@ class ThinkingRouter:
             re.IGNORECASE,
         )
 
-        # Stage 3: SLM Schema
+        # Stage 3: SLM Schema (used if Laya is explicitly enabled)
         self.laya_schema = {
             "complexity": {
                 "type": "choice",
@@ -83,8 +82,15 @@ class ThinkingRouter:
             }
         }
 
-        self.agent = laya.load("aac6fef/laya-mlx")
-        _ = self.agent.predict("warmup", self.laya_schema)
+        # Lazy / optional Laya agent (disabled by default to prevent model sprawl & save ~800MB RAM)
+        self.agent = None
+        if enable_laya:
+            try:
+                import laya_mlx as laya
+                self.agent = laya.load("aac6fef/laya-mlx")
+                _ = self.agent.predict("warmup", self.laya_schema)
+            except Exception:
+                self.agent = None
 
     def route(self, query: str) -> HybridDecision:
         t_start = time.perf_counter()
@@ -175,19 +181,45 @@ class ThinkingRouter:
             )
 
         # -------------------------------------------------------------
-        # STAGE 3: Semantic Arbiter (Laya SLM) (~30-35 ms)
+        # STAGE 3: Semantic Arbiter (Laya SLM or Fast Heuristic)
         # -------------------------------------------------------------
-        laya_res = self.agent.predict(clean, self.laya_schema)
-        probs = laya_res["answers"]["complexity"]["probabilities"]
+        if self.agent is not None:
+            laya_res = self.agent.predict(clean, self.laya_schema)
+            probs = laya_res["answers"]["complexity"]["probabilities"]
 
-        p_low = probs.get("low", 0.0)
-        p_high = probs.get("high", 0.0)
+            p_low = probs.get("low", 0.0)
+            p_high = probs.get("high", 0.0)
 
-        if p_high >= 0.35:
+            if p_high >= 0.35:
+                effort = ReasoningEffort.HIGH
+                requires_thinking = True
+            elif (p_low + p_high) >= 0.40:
+                effort = ReasoningEffort.LOW
+                requires_thinking = True
+            else:
+                effort = ReasoningEffort.NONE
+                requires_thinking = False
+
+            return HybridDecision(
+                query=query,
+                requires_thinking=requires_thinking,
+                effort_level=effort,
+                source="stage3_laya_semantic",
+                latency_ms=(time.perf_counter() - t_start) * 1000,
+                confidence=max(probs.values()),
+                debug_info={"probs": probs},
+            )
+
+        # Fast deterministic semantic heuristic (< 0.05 ms, 0 MB RAM)
+        complex_reasoning_keywords = {
+            "trade-off", "tradeoff", "architecture", "compare", "contrast",
+            "step by step", "step-by-step", "derive", "optimize", "optimization",
+            "bottleneck", "algorithm", "concurrency", "distributed", "quantum", "entanglement"
+        }
+        has_complex_reasoning = any(k in clean_lower for k in complex_reasoning_keywords) or len(tokens_text) > 80
+
+        if has_complex_reasoning:
             effort = ReasoningEffort.HIGH
-            requires_thinking = True
-        elif (p_low + p_high) >= 0.40:
-            effort = ReasoningEffort.LOW
             requires_thinking = True
         else:
             effort = ReasoningEffort.NONE
@@ -197,10 +229,9 @@ class ThinkingRouter:
             query=query,
             requires_thinking=requires_thinking,
             effort_level=effort,
-            source="stage3_laya_semantic",
+            source="stage3_deterministic_heuristic",
             latency_ms=(time.perf_counter() - t_start) * 1000,
-            confidence=max(probs.values()),
-            debug_info={"probs": probs},
+            confidence=0.85 if requires_thinking else 0.95,
         )
 
     def route_messages(self, messages: list[dict[str, Any]]) -> HybridDecision:
