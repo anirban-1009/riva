@@ -50,16 +50,21 @@ DATA_DIR: Path = Path(os.environ.get("RIVA_DATA_DIR", _config.get("data_dir", Pa
 # Default concrete model to dispatch Assistant Mode ("riva") requests to.
 ASSISTANT_MODEL: str = _config.get("assistant_model") or MODEL or "llama3:8b"
 
+def _resolve_memory_router_laya(cfg: dict | None = None) -> bool:
+    if cfg is None:
+        cfg = _config
+    if "RIVA_MEMORY_LAYA" in os.environ:
+        return os.environ.get("RIVA_MEMORY_LAYA", "").lower() in ("true", "1", "yes")
+    if "memory_router_laya" in cfg:
+        return bool(cfg.get("memory_router_laya"))
+    if "memory_laya" in cfg:
+        return bool(cfg.get("memory_laya"))
+    return bool((cfg.get("memory") or {}).get("laya", False))
+
+
 # Toggle Laya MLX in MemoryRouter. False (default) uses fast, deterministic
 # linguistic & syntactic regex heuristics (< 0.2ms, 0 MB extra RAM); True loads
 # and uses the in-process aac6fef/laya-mlx SLM (~800 MB RAM).
-MEMORY_ROUTER_LAYA_ENABLED: bool = bool(
-    os.environ.get("RIVA_MEMORY_LAYA", "").lower() in ("true", "1", "yes")
-    if "RIVA_MEMORY_LAYA" in os.environ
-    else _config.get("memory_router_laya")
-    if "memory_router_laya" in _config
-    else _config.get("memory_laya")
-    if "memory_laya" in _config
-    else (_config.get("memory") or {}).get("laya", False)
-)
+MEMORY_ROUTER_LAYA_ENABLED: bool = _resolve_memory_router_laya(_config)
 MEMORY_LAYA_ENABLED: bool = MEMORY_ROUTER_LAYA_ENABLED
+

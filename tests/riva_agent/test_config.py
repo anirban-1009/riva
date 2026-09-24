@@ -38,9 +38,24 @@ def test_load_config_valid_yaml():
 
 
 def test_memory_router_laya_config_default():
-    """Verify MEMORY_ROUTER_LAYA_ENABLED default is a boolean (False by default)."""
-    from riva_agent.config import MEMORY_ROUTER_LAYA_ENABLED, MEMORY_LAYA_ENABLED
+    """Verify MEMORY_ROUTER_LAYA_ENABLED default is a boolean and resolves to False when unconfigured."""
+    from riva_agent.config import (
+        MEMORY_ROUTER_LAYA_ENABLED,
+        MEMORY_LAYA_ENABLED,
+        _resolve_memory_router_laya,
+    )
     assert isinstance(MEMORY_ROUTER_LAYA_ENABLED, bool)
-    assert MEMORY_ROUTER_LAYA_ENABLED is False
     assert MEMORY_LAYA_ENABLED == MEMORY_ROUTER_LAYA_ENABLED
+
+    # When no env var and no config entry is provided, default must be False
+    with patch.dict("os.environ", {}, clear=True):
+        assert _resolve_memory_router_laya({}) is False
+        assert _resolve_memory_router_laya({"memory_router_laya": True}) is True
+        assert _resolve_memory_router_laya({"memory": {"laya": True}}) is True
+
+    # Env var override takes precedence
+    with patch.dict("os.environ", {"RIVA_MEMORY_LAYA": "true"}):
+        assert _resolve_memory_router_laya({}) is True
+        assert _resolve_memory_router_laya({"memory_router_laya": False}) is True
+
 

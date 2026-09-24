@@ -14,10 +14,10 @@ gantt
   dateFormat  YYYY-MM-DD
   axisFormat  %b %d
 
-  M0 - Gateway Hardening & Guard              :active, m0, 2026-09-22, 4d
-  M1 - Central Profile Store (SQLite)         :m1, after m0, 5d
-  M2 - Episodic Memory & Router               :m2, after m1, 7d
-  M3 - Trust Surface, Storage & CLI           :m3, after m2, 5d
+  M0 - Gateway Hardening & Guard              :done, m0, 2026-09-22, 4d
+  M1 - Central Profile Store (SQLite)         :done, m1, after m0, 5d
+  M2 - Episodic Memory & Router               :done, m2, after m1, 7d
+  M3 - Trust Surface, Storage & CLI           :active, m3, after m2, 5d
   v1 Checkpoint & Privacy Check               :crit, v1_done, after m3, 2d
   M4 - Semantic Recall (sqlite-vec)           :m4, after v1_done, 7d
   M5 - Proactive Digests (macOS)              :m5, after m4, 5d
@@ -30,6 +30,7 @@ gantt
 ## Milestone Breakdown & Target Timelines
 
 ### Phase 1: Foundation & Gateway Hardening (M0)
+**Status**: **COMPLETED** (Verified via test suite & OpenClaw live testing)  
 **Estimated Duration**: ~3–4 Days  
 **Primary Focus**: Lock in streaming reliability, privacy constraints, and dual-mode routing.
 
@@ -47,6 +48,7 @@ gantt
 ---
 
 ### Phase 2: The User Profile System (M1)
+**Status**: **COMPLETED** (Implemented in `common/profile/store.py` with 100% test coverage)  
 **Estimated Duration**: ~4–5 Days  
 **Primary Focus**: A persistent, structured model of the user that survives restarts.
 
@@ -67,6 +69,7 @@ gantt
 ---
 
 ### Phase 3: Episodic Memory & Syntactic Admission Router (M2)
+**Status**: **COMPLETED** (Implemented in `common/memory/store.py` & `src/riva_agent/intelligence/memory_router.py`)  
 **Estimated Duration**: ~6–7 Days  
 **Primary Focus**: Conversation recording, recency retrieval, and deterministic fact admission.
 
@@ -90,6 +93,7 @@ gantt
 ---
 
 ### Phase 4: Trust Surface, Storage Management & CLI — v1 Ship (M3)
+**Status**: **IN PROGRESS** (`riva` CLI shipped with `ask`, `profile`, `memory`; `riva storage` compaction/pruning and daemon log rotation remaining)  
 **Estimated Duration**: ~4–5 Days  
 **Primary Focus**: User-facing trust, storage lifecycle management, and the primary personal interface.
 
@@ -174,12 +178,13 @@ gantt
 
 ## Summary Timeline Table
 
-| Phase | Milestone | Core Deliverable | Target Working Window |
-|---|---|---|---|
-| **Phase 1** | **M0** | Gateway Hardening, SSE Contracts, Pass-through / Assistant Routing | Week 1 (Days 1–4) |
-| **Phase 2** | **M1** | Persistent User Profile (SQLite + Prompt Injection) | Week 1–2 (Days 5–9) |
-| **Phase 3** | **M2** | Episodic Memory & spaCy Syntactic Router | Week 2–3 (Days 10–16) |
-| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) |
-| **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) |
-| **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) |
-| **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) |
+| Phase | Milestone | Core Deliverable | Target Working Window | Status |
+|---|---|---|---|---|
+| **Phase 1** | **M0** | Gateway Hardening, SSE Contracts, Pass-through / Assistant Routing | Week 1 (Days 1–4) | **COMPLETED** |
+| **Phase 2** | **M1** | Persistent User Profile (SQLite + Prompt Injection) | Week 1–2 (Days 5–9) | **COMPLETED** |
+| **Phase 3** | **M2** | Episodic Memory & spaCy Syntactic Router | Week 2–3 (Days 10–16) | **COMPLETED** |
+| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **IN PROGRESS** |
+| **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | Planned |
+| **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) | Planned |
+| **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) | Planned |
+
