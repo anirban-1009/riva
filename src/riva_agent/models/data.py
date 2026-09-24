@@ -8,6 +8,8 @@ from pydantic import BaseModel, field_validator
 class Delta:
     role: str | None = None
     content: str | None = None
+    reasoning_content: str | None = None
+    reasoning: str | None = None
 
 
 class ChatMessage(BaseModel):
@@ -61,6 +63,8 @@ class Chunk:
 class AssistantMessage:
     content: str
     role: str = "assistant"
+    reasoning_content: str | None = None
+    reasoning: str | None = None
 
 
 @dataclass

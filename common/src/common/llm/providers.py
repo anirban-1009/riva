@@ -37,7 +37,7 @@ class LLMProvider(Protocol):
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str: ...
 
@@ -47,13 +47,26 @@ class LLMProvider(Protocol):
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
-    ) -> AsyncGenerator[str, None]: ...
+    ) -> AsyncGenerator[Any, None]: ...
 
     async def get_capabilities(self, model: str) -> list[str]: ...
 
     async def list_models(self) -> list[str]: ...
+
+
+def inject_concise_thinking_instruction(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Inject a concise reasoning instruction into the system turn."""
+    concise_prompt = "Keep your thinking concise: maximum 2-3 brief sentences before answering."
+    msgs = [dict(m) for m in messages]
+    for msg in msgs:
+        if msg.get("role") == "system":
+            content = msg.get("content", "")
+            if concise_prompt not in content:
+                msg["content"] = f"{content}\n{concise_prompt}".strip()
+            return msgs
+    return [{"role": "system", "content": concise_prompt}] + msgs
 
 
 class OllamaProvider:
@@ -75,17 +88,17 @@ class OllamaProvider:
         )
         self.model = model
 
-    def _get_client(self) -> httpx.AsyncClient:
-        """Lazy-initialize and return the shared, connection-pooled AsyncClient."""
-        cls = OllamaProvider
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
+        """Return the process-wide shared client, instantiating it if necessary."""
         if cls._shared_client is None or cls._shared_client.is_closed:
             cls._shared_client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUT)
         return cls._shared_client
 
     @classmethod
     async def close(cls) -> None:
-        """Close the shared HTTP client session."""
-        if cls._shared_client and not cls._shared_client.is_closed:
+        """Close the shared client, releasing any pooled connections."""
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
             await cls._shared_client.aclose()
         cls._shared_client = None
 
@@ -95,40 +108,81 @@ class OllamaProvider:
         max_tokens: int | None,
         extra: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Translate the common param names into Ollama's `options` shape."""
-        options = dict(extra) if extra else {}
+        options: dict[str, Any] = {}
         if temperature is not None:
             options["temperature"] = temperature
         if max_tokens is not None:
             options["num_predict"] = max_tokens
+        if extra:
+            options.update(extra)
         return options
 
-    async def get_capabilities(self, model: str) -> list[str]:
-        """Return Ollama's reported capabilities for `model` (e.g. ["completion", "tools", "thinking"]).
+    @classmethod
+    def _build_payload(
+        cls,
+        model: str,
+        messages: list[dict[str, str]],
+        stream: bool,
+        options: dict[str, Any] | None,
+        think: Any = None,
+    ) -> dict[str, Any]:
+        msgs = list(messages)
+        payload: dict[str, Any] = {
+            "model": model,
+            "messages": msgs,
+            "stream": stream,
+            "keep_alive": _DEFAULT_KEEP_ALIVE,
+        }
+        if options:
+            payload["options"] = options
+        if think is not None:
+            effort_val = think.value if hasattr(think, "value") else str(think).lower()
+            if effort_val in ("none", "false"):
+                payload["think"] = False
+            elif effort_val == "low":
+                payload["think"] = True
+                payload["messages"] = inject_concise_thinking_instruction(msgs)
+            else:
+                payload["think"] = True
+        return payload
 
-        Queried from /api/tags instead of guessed from the model name, so
-        newly pulled or renamed models are handled correctly without a code
-        change. Cached across all models for _CAPABILITIES_TTL_S since the
-        installed model list rarely changes mid-session.
-        """
-        cls = OllamaProvider
+    async def get_capabilities(self, model: str) -> list[str]:
+        """Return Ollama's reported capabilities for `model` (e.g. ["completion", "tools", "thinking"])."""
         now = time.monotonic()
+        cls = self.__class__
         if (
-            cls._capabilities_cache is None
-            or now - cls._capabilities_cache_at > _CAPABILITIES_TTL_S
+            cls._capabilities_cache is not None
+            and (now - cls._capabilities_cache_at) < _CAPABILITIES_TTL_S
+            and model in cls._capabilities_cache
         ):
-            client = self._get_client()
-            response = await client.get(f"{self.base_url}/api/tags")
+            return cls._capabilities_cache[model]
+
+        client = self._get_client()
+        url = f"{self.base_url}/api/tags"
+        try:
+            response = await client.get(url)
             response.raise_for_status()
-            models = response.json().get("models", [])
-            cls._capabilities_cache = {
-                m["name"]: m.get("capabilities", []) for m in models
-            }
+            cache: dict[str, list[str]] = {}
+            for item in response.json().get("models", []):
+                name = item.get("name")
+                if not name:
+                    continue
+                caps: list[str] = [
+                    k for k, v in item.get("capabilities", {}).items() if v
+                ]
+                cache[name] = caps
+                if ":" in name:
+                    cache[name.split(":")[0]] = caps
+            cls._capabilities_cache = cache
             cls._capabilities_cache_at = now
-        return cls._capabilities_cache.get(model, [])
+            return cache.get(model, [])
+        except httpx.HTTPError:
+            if cls._capabilities_cache is not None and model in cls._capabilities_cache:
+                return cls._capabilities_cache[model]
+            return []
 
     async def list_models(self) -> list[str]:
-        """Return the names of models installed in this Ollama instance."""
+        """Return model names available in Ollama, via GET /api/tags."""
         client = self._get_client()
         response = await client.get(f"{self.base_url}/api/tags")
         response.raise_for_status()
@@ -140,22 +194,13 @@ class OllamaProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat prompt to Ollama synchronously and return the assistant response."""
         url = f"{self.base_url}/api/chat"
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "keep_alive": _DEFAULT_KEEP_ALIVE,
-        }
         options = self._build_options(temperature, max_tokens, extra)
-        if options:
-            payload["options"] = options
-        if think is not None:
-            payload["think"] = think
+        payload = self._build_payload(self.model, messages, False, options, think)
 
         with httpx.Client(timeout=_REQUEST_TIMEOUT) as client:
             try:
@@ -172,23 +217,14 @@ class OllamaProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat prompt to Ollama asynchronously and return the response."""
         client = self._get_client()
         url = f"{self.base_url}/api/chat"
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-            "keep_alive": _DEFAULT_KEEP_ALIVE,
-        }
         options = self._build_options(temperature, max_tokens, extra)
-        if options:
-            payload["options"] = options
-        if think is not None:
-            payload["think"] = think
+        payload = self._build_payload(self.model, messages, False, options, think)
 
         try:
             response = await client.post(url, json=payload)
@@ -204,23 +240,14 @@ class OllamaProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> AsyncGenerator[str, None]:
         """Stream chat tokens from Ollama asynchronously."""
         client = self._get_client()
         url = f"{self.base_url}/api/chat"
-        payload: dict[str, Any] = {
-            "model": self.model,
-            "messages": messages,
-            "stream": True,
-            "keep_alive": _DEFAULT_KEEP_ALIVE,
-        }
         options = self._build_options(temperature, max_tokens, extra)
-        if options:
-            payload["options"] = options
-        if think is not None:
-            payload["think"] = think
+        payload = self._build_payload(self.model, messages, True, options, think)
 
         try:
             async with client.stream("POST", url, json=payload) as response:
@@ -229,20 +256,20 @@ class OllamaProvider:
                     if not line:
                         continue
                     chunk = json.loads(line)
-                    content = chunk.get("message", {}).get("content", "")
+                    msg = chunk.get("message", {})
+                    thinking = msg.get("thinking")
+                    content = msg.get("content")
+                    if thinking:
+                        yield ("reasoning", thinking)
                     if content:
-                        yield content
+                        yield ("content", content)
         except httpx.HTTPError as e:
             raise RuntimeError(f"Ollama stream request failed: {e}") from e
 
 
 class OpenAICompatibleProvider:
     """Provider for any backend that speaks the OpenAI `/chat/completions` wire
-    protocol: OpenAI itself, Groq, OpenRouter, Together, or a self-hosted
-    vLLM/LM Studio/llama.cpp server.
-
-    `base_url` defaults to OpenAI's API but is meant to be overridden (via
-    the constructor or OPENAI_BASE_URL) to point at any compatible endpoint.
+    protocol: vLLM, LMDeploy, llama.cpp server, mlx-lm, or OpenAI itself.
     """
 
     _shared_client: ClassVar[httpx.AsyncClient | None] = None
@@ -251,65 +278,72 @@ class OpenAICompatibleProvider:
         self,
         base_url: str | None = None,
         api_key: str | None = None,
-        model: str = "gpt-4o-mini",
+        model: str = "default",
     ) -> None:
-        """Initialize with base URL, API key, and model name, all overridable via env vars."""
         self.base_url = (
-            base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            base_url
+            or os.getenv("OPENAI_BASE_URL")
+            or "https://api.openai.com/v1"
         ).rstrip("/")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
 
-    def _get_client(self) -> httpx.AsyncClient:
-        """Lazy-initialize and return the shared, connection-pooled AsyncClient.
-
-        Auth isn't baked into the client's default headers because it's shared
-        across every instance of this class; each request attaches its own
-        instance's API key instead, so multiple instances with different keys
-        can safely reuse the same connection pool.
-        """
-        cls = OpenAICompatibleProvider
+    @classmethod
+    def _get_client(cls) -> httpx.AsyncClient:
         if cls._shared_client is None or cls._shared_client.is_closed:
             cls._shared_client = httpx.AsyncClient(timeout=_REQUEST_TIMEOUT)
         return cls._shared_client
 
     @classmethod
     async def close(cls) -> None:
-        """Close the shared HTTP client session."""
-        if cls._shared_client and not cls._shared_client.is_closed:
+        if cls._shared_client is not None and not cls._shared_client.is_closed:
             await cls._shared_client.aclose()
         cls._shared_client = None
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
-    @staticmethod
+    @classmethod
     def _build_payload(
+        cls,
         model: str,
         messages: list[dict[str, str]],
         stream: bool,
         temperature: float | None,
         max_tokens: int | None,
-        extra: dict[str, Any] | None,
+        think: Any = None,
+        extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {"model": model, "messages": messages, "stream": stream}
+        msgs = list(messages)
+        payload: dict[str, Any] = {"model": model, "messages": msgs, "stream": stream}
         if temperature is not None:
             payload["temperature"] = temperature
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+
+        if think is not None:
+            effort_val = think.value if hasattr(think, "value") else str(think).lower()
+            if effort_val in ("none", "false"):
+                payload["chat_template_kwargs"] = {"enable_thinking": False}
+            elif effort_val == "low":
+                payload["chat_template_kwargs"] = {"enable_thinking": True}
+                payload["reasoning_effort"] = "low"
+                payload["messages"] = inject_concise_thinking_instruction(msgs)
+            elif effort_val in ("high", "true"):
+                payload["chat_template_kwargs"] = {"enable_thinking": True}
+                payload["reasoning_effort"] = "high"
+
         if extra:
             payload.update(extra)
         return payload
 
     async def get_capabilities(self, model: str) -> list[str]:
         """OpenAI-compatible APIs don't expose a capabilities endpoint.
-
-        Always returns []; callers should treat that as "no capability info
-        available" rather than "this model supports nothing", and skip
-        fields (like Ollama's `think`) that only some backends understand.
+        Returns ['thinking', 'completion'] so that thinking router decisions
+        are forwarded for thinking-capable engines (like MLX server).
         """
-        del model  # required by LLMProvider; this backend has no per-model lookup
-        return []
+        del model
+        return ["thinking", "completion"]
 
     async def list_models(self) -> list[str]:
         """Return model ids available on this endpoint, via the standard GET /models."""
@@ -326,14 +360,13 @@ class OpenAICompatibleProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat prompt synchronously and return the assistant response."""
-        del think  # required by LLMProvider; no equivalent in the OpenAI wire format
         url = f"{self.base_url}/chat/completions"
         payload = self._build_payload(
-            self.model, messages, False, temperature, max_tokens, extra
+            self.model, messages, False, temperature, max_tokens, think, extra
         )
 
         with httpx.Client(timeout=_REQUEST_TIMEOUT) as client:
@@ -341,7 +374,8 @@ class OpenAICompatibleProvider:
                 response = client.post(url, json=payload, headers=self._auth_headers())
                 response.raise_for_status()
                 resp_data = response.json()
-                return str(resp_data["choices"][0]["message"]["content"])
+                msg = resp_data["choices"][0]["message"]
+                return str(msg.get("content") or "")
             except httpx.HTTPError as e:
                 raise RuntimeError(f"OpenAI-compatible request failed: {e}") from e
 
@@ -351,22 +385,22 @@ class OpenAICompatibleProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str:
         """Send a chat prompt asynchronously and return the assistant response."""
-        del think  # required by LLMProvider; no equivalent in the OpenAI wire format
         client = self._get_client()
         url = f"{self.base_url}/chat/completions"
         payload = self._build_payload(
-            self.model, messages, False, temperature, max_tokens, extra
+            self.model, messages, False, temperature, max_tokens, think, extra
         )
 
         try:
             response = await client.post(url, json=payload, headers=self._auth_headers())
             response.raise_for_status()
             resp_data = response.json()
-            return str(resp_data["choices"][0]["message"]["content"])
+            msg = resp_data["choices"][0]["message"]
+            return str(msg.get("content") or "")
         except httpx.HTTPError as e:
             raise RuntimeError(f"OpenAI-compatible request failed: {e}") from e
 
@@ -376,15 +410,14 @@ class OpenAICompatibleProvider:
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
-        think: bool | None = None,
+        think: Any = None,
         extra: dict[str, Any] | None = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Any, None]:
         """Stream chat tokens asynchronously, parsing the OpenAI SSE format."""
-        del think  # required by LLMProvider; no equivalent in the OpenAI wire format
         client = self._get_client()
         url = f"{self.base_url}/chat/completions"
         payload = self._build_payload(
-            self.model, messages, True, temperature, max_tokens, extra
+            self.model, messages, True, temperature, max_tokens, think, extra
         )
 
         try:
@@ -400,9 +433,13 @@ class OpenAICompatibleProvider:
                         break
                     chunk = json.loads(data)
                     choices = chunk.get("choices") or [{}]
-                    content = choices[0].get("delta", {}).get("content")
+                    delta = choices[0].get("delta", {})
+                    reasoning = delta.get("reasoning") or delta.get("reasoning_content")
+                    content = delta.get("content")
+                    if reasoning:
+                        yield ("reasoning", reasoning)
                     if content:
-                        yield content
+                        yield ("content", content)
         except httpx.HTTPError as e:
             raise RuntimeError(f"OpenAI-compatible stream request failed: {e}") from e
 

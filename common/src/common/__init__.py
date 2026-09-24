@@ -5,6 +5,10 @@ from common.llm.providers import (
     create_provider,
 )
 from common.llm.manager import LLMManager
+from common.profile import ProfileEntry, ProfileStore
+from common.profile.store import get_profile_store
+from common.memory import EpisodicStore, PendingMemory, Turn
+from common.memory.store import get_episodic_store
 
 __all__ = [
     "LLMProvider",
@@ -12,6 +16,13 @@ __all__ = [
     "OpenAICompatibleProvider",
     "create_provider",
     "LLMManager",
+    "ProfileStore",
+    "ProfileEntry",
+    "get_profile_store",
+    "EpisodicStore",
+    "Turn",
+    "PendingMemory",
+    "get_episodic_store",
 ]
 
 def main() -> None:

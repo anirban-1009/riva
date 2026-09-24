@@ -3,16 +3,20 @@ import json
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, AsyncGenerator
+import re
+from typing import Any, AsyncGenerator, Callable
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
+from common import get_episodic_store, get_profile_store
 from common.llm.providers import LLMProvider, OllamaProvider, create_provider
 from riva_agent import config
+from riva_agent.intelligence.memory_router import route_memory
 from riva_agent.models.data import (
     AssistantMessage,
     ChatCompletionRequest,
@@ -24,17 +28,36 @@ from riva_agent.models.data import (
     ModelList,
     StreamChoice,
 )
-from riva_agent.reasoning import should_use_extended_thinking
+from riva_agent.intelligence.reasoning import (
+    HybridDecision,
+    ReasoningEffort,
+    decide_reasoning_effort,
+    get_thinking_router,
+)
 
 try:
     __version__ = version("riva-agent")
 except PackageNotFoundError:
     __version__ = "0.0.0-dev"
 
-app = FastAPI(title="Riva Agent AI Gateway", version=__version__)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Pre-warm ThinkingRouter at startup so initial requests don't pay model load latency."""
+    if config.THINKING_ENABLED:
+        try:
+            logger.info("Pre-warming ThinkingRouter (spaCy)...")
+            await asyncio.to_thread(get_thinking_router)
+            logger.info("ThinkingRouter pre-warmed successfully.")
+        except Exception as e:
+            logger.warning("Failed to pre-warm ThinkingRouter: %s", e)
+    yield
+
+
+app = FastAPI(title="Riva Agent AI Gateway", version=__version__, lifespan=lifespan)
 
 
 # How often to emit an SSE comment while waiting for the next token, so
@@ -50,13 +73,15 @@ async def stream_generator(
     created_time: int,
     temperature: float | None,
     max_tokens: int | None,
-    think: bool | None,
+    think: Any = None,
+    on_complete: Callable[[str], None] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Generate server-sent events for chat completion chunks."""
     token_iter = provider.chat_stream(
         messages, temperature=temperature, max_tokens=max_tokens, think=think
     ).__aiter__()
-    pending: asyncio.Task[str] | None = None
+    pending: asyncio.Task[Any] | None = None
+    collected_tokens: list[str] = []
     try:
         role_chunk = Chunk(
             id=request_id,
@@ -64,7 +89,11 @@ async def stream_generator(
             model=model,
             choices=[StreamChoice(delta=Delta(role="assistant"))],
         )
-        yield f"data: {json.dumps(asdict(role_chunk))}\n\n"
+        role_dict = asdict(role_chunk)
+        role_dict["choices"][0]["delta"] = {
+            k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None
+        }
+        yield f"data: {json.dumps(role_dict)}\n\n"
 
         while True:
             if pending is None:
@@ -81,18 +110,38 @@ async def stream_generator(
 
             task, pending = pending, None
             try:
-                token = task.result()
+                token_item = task.result()
             except StopAsyncIteration:
                 break
+
+            if isinstance(token_item, tuple):
+                kind, token_text = token_item
+            else:
+                kind, token_text = "content", token_item
+
+            if kind == "reasoning":
+                delta = Delta(reasoning_content=token_text, reasoning=token_text)
+            else:
+                delta = Delta(content=token_text)
+                collected_tokens.append(token_text)
 
             chunk = Chunk(
                 id=request_id,
                 created=created_time,
                 model=model,
-                choices=[StreamChoice(delta=Delta(content=token))],
+                choices=[StreamChoice(delta=delta)],
             )
+            chunk_dict = asdict(chunk)
+            chunk_dict["choices"][0]["delta"] = {
+                k: v for k, v in chunk_dict["choices"][0]["delta"].items() if v is not None
+            }
+            yield f"data: {json.dumps(chunk_dict)}\n\n"
 
-            yield f"data: {json.dumps(asdict(chunk))}\n\n"
+        if on_complete:
+            try:
+                on_complete("".join(collected_tokens))
+            except Exception as e:
+                logger.warning("on_complete callback failed: %s", e)
 
         done_chunk = Chunk(
             id=request_id,
@@ -100,8 +149,11 @@ async def stream_generator(
             model=model,
             choices=[StreamChoice(index=0, finish_reason="stop")],
         )
-
-        yield f"data: {json.dumps(asdict(done_chunk))}\n\n"
+        done_dict = asdict(done_chunk)
+        done_dict["choices"][0]["delta"] = {
+            k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None
+        }
+        yield f"data: {json.dumps(done_dict)}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
         logger.exception("stream_generator failed request_id=%s model=%s", request_id, model)
@@ -131,6 +183,8 @@ async def list_models() -> dict[str, Any]:
     )
     try:
         model_ids = await provider.list_models()
+        if "riva" not in model_ids:
+            model_ids.insert(0, "riva")
         models = [Model(id=model_id, created=int(time.time())) for model_id in model_ids]
         return asdict(ModelList(data=models))
     except Exception as e:
@@ -161,8 +215,14 @@ async def show_model(request: dict[str, Any]) -> Any:
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest) -> Any:
-    """Handle chat completion requests, supporting streaming and non-streaming modes."""
-    model = config.MODEL or request.model
+    """Handle chat completion requests, supporting streaming, non-streaming, and assistant mode."""
+    is_assistant_mode = (request.model.strip().lower() == "riva")
+
+    if is_assistant_mode:
+        model = config.MODEL or config.ASSISTANT_MODEL
+    else:
+        model = config.MODEL or request.model
+
     provider = create_provider(
         config.PROVIDER,
         model=model,
@@ -182,46 +242,107 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
 
     stream = request.stream and config.STREAMING_ENABLED
 
+    # Extract only the latest user query so previous history does not pollute the router
+    user_query = ""
+    for msg in reversed(request.messages):
+        if msg.role == "user":
+            user_query = msg.content
+            break
+
+    session_id = request_id
+    profile_store = None
+    episodic_store = None
+
+    if is_assistant_mode:
+        profile_store = get_profile_store(config.DATA_DIR / "profile.db")
+        episodic_store = get_episodic_store(config.DATA_DIR / "memory.db")
+
+        # 1. Profile Context injection
+        profile_ctx = profile_store.format_context()
+        assistant_persona = "You are Riva, a private personal assistant that knows me."
+        system_instruction = (
+            f"{assistant_persona}\n\n{profile_ctx}" if profile_ctx else assistant_persona
+        )
+
+        if messages_payload and messages_payload[0]["role"] == "system":
+            messages_payload[0]["content"] = f"{system_instruction}\n\n{messages_payload[0]['content']}"
+        else:
+            messages_payload.insert(0, {"role": "system", "content": system_instruction})
+
+        # 2. Episodic Log & Explicit Directive Handling
+        if user_query:
+            episodic_store.log_turn(session_id, "user", user_query)
+            try:
+                mem_event = route_memory(user_query)
+                if mem_event.is_explicit:
+                    clean_fact = re.sub(
+                        r"^(please\s+)?(remember|keep in mind|take note|don't forget)\s*(that\s*)?",
+                        "",
+                        user_query,
+                        flags=re.IGNORECASE,
+                    ).strip()
+                    if clean_fact:
+                        profile_store.set(clean_fact[:50], clean_fact, category="facts")
+                        logger.info("Explicit memory saved to profile: %s", clean_fact)
+            except Exception as e:
+                logger.warning("Failed to evaluate memory route for query: %s", e)
+
     capabilities = await provider.get_capabilities(model)
-    if "thinking" not in capabilities:
-        think = None
-    elif not config.THINKING_ENABLED:
-        # Explicit False, not None: some models (e.g. gemma4) default to
-        # thinking on when the field is omitted entirely.
-        think = False
+    decision: HybridDecision | None = None
+    effort: ReasoningEffort = ReasoningEffort.NONE
+
+    if not config.THINKING_ENABLED or not user_query.strip():
+        effort = ReasoningEffort.NONE
+    elif "thinking" in capabilities or config.PROVIDER == "openai_compatible":
+        decision = await asyncio.to_thread(decide_reasoning_effort, user_query)
+        effort = decision.effort_level
     else:
-        think = should_use_extended_thinking(messages_payload)
+        effort = ReasoningEffort.NONE
+
     logger.info(
-        "chat_completions request_id=%s model=%s stream=%s think=%s",
+        "chat_completions request_id=%s requested_model=%s concrete_model=%s assistant_mode=%s stream=%s effort=%s",
         request_id,
+        request.model,
         model,
+        is_assistant_mode,
         stream,
-        think,
+        effort.value,
     )
+
+    on_complete_cb: Callable[[str], None] | None = None
+    if is_assistant_mode and episodic_store:
+        def _save_assistant_turn(text: str) -> None:
+            if text.strip():
+                episodic_store.log_turn(session_id, "assistant", text)
+        on_complete_cb = _save_assistant_turn
 
     if stream:
         return StreamingResponse(
             stream_generator(
                 provider,
                 messages_payload,
-                model,
+                request.model if is_assistant_mode else model,
                 request_id,
                 created_time,
                 temperature,
                 max_tokens,
-                think,
+                effort,
+                on_complete=on_complete_cb,
             ),
             media_type="text/event-stream",
         )
 
     try:
         content = await provider.chat_async(
-            messages_payload, temperature=temperature, max_tokens=max_tokens, think=think
+            messages_payload, temperature=temperature, max_tokens=max_tokens, think=effort
         )
+        if on_complete_cb:
+            on_complete_cb(content)
+
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,
-            model=model,
+            model=request.model if is_assistant_mode else model,
             choices=[Choice(message=AssistantMessage(content=content))],
         )
         return asdict(response)

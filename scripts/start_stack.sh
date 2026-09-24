@@ -119,8 +119,10 @@ start_mlx() {
         return 1
     fi
 
-    log_info "Starting mlx_lm.server with model '${MODEL}'..."
-    nohup mlx_lm.server --model "${MODEL}" --port "${MLX_PORT}" > "${MLX_LOG}" 2>&1 &
+    log_info "Starting mlx_lm.server with model '${MODEL}' (1GB KV cache bound)..."
+    nohup mlx_lm.server --model "${MODEL}" --port "${MLX_PORT}" \
+        --prompt-cache-bytes 1073741824 \
+        --prompt-cache-size 2 > "${MLX_LOG}" 2>&1 &
     local pid=$!
     echo "${pid}" > "${MLX_PID_FILE}"
     disown "${pid}" 2>/dev/null || true

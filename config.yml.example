@@ -5,20 +5,25 @@
 # OpenAI-compatible API - OpenAI itself, Groq, OpenRouter, a self-hosted
 # vLLM/LM Studio server or mlx_lm.server, etc). Configure it via the
 # `openai:` section below.
-provider: ollama
+provider: openai
 
 # When set, every /v1/chat/completions request uses this model regardless of
 # what the client asks for. Leave unset to let each request pick its own
 # model. Run `curl localhost:8085/v1/models` to see what's available.
-model: gemma4:12b-mlx
+model: mlx-community/gemma-4-E4B-it-qat-4bit
+
+# Target model to dispatch requests to when a client specifies `model: "riva"`
+# (Assistant Mode with persistent user profile injection & episodic memory).
+# Defaults to `model` above, or "llama3:8b".
+assistant_model: mlx-community/gemma-4-E4B-it-qat-4bit
 
 # Only used when provider is "openai". Both keys are optional here and fall
 # back to the OPENAI_BASE_URL / OPENAI_API_KEY env vars if omitted - keep
 # api_key out of this file (env var only) if you'd rather not have a secret
 # sitting in a config file, even a gitignored one.
-# openai:
-#   base_url: http://localhost:8081/v1   # e.g. a local mlx_lm.server
-#   api_key: sk-...                      # only needed for a real hosted API
+openai:
+  base_url: http://localhost:8081/v1   # e.g. a local mlx_lm.server
+# api_key: sk-...                      # only needed for a real hosted API
 
 # Kill switch for the extended-thinking heuristic. false disables "think"
 # entirely regardless of prompt content or model capability; true (default)
@@ -29,3 +34,14 @@ thinking: true
 # regardless of the client's "stream" field. true (default) respects
 # whatever the client asks for.
 streaming: true
+
+# Enable/disable in-process Laya MLX model for memory routing (default: false).
+# - false: Uses fast deterministic linguistic & syntactic regex heuristics (< 0.2ms, 0 MB extra RAM).
+# - true: Loads aac6fef/laya-mlx in-process (~800MB resident RAM) for SLM binary contrast.
+# Can also be set via RIVA_MEMORY_LAYA=true env var.
+memory_router_laya: false
+
+# Directory where local SQLite stores (profile.db, memory.db) reside.
+# Defaults to ~/.riva, or can be set via RIVA_DATA_DIR env var.
+# data_dir: ~/.riva
+

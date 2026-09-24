@@ -61,16 +61,30 @@ Example dependency graph:
 
 ## Development
 
-Sync all dependencies:
+### Sync Dependencies
+
+Install core platform dependencies (recommended, excludes heavy `experiments` notebooks and libraries):
 
 ```bash
+# Sync core riva-agent, common, and genie packages (lean install)
 uv sync
 ```
 
-View workspace dependency tree:
+Install all workspace dependencies (including `experiments` with Jupyter, PyTorch, Mem0, etc.):
 
 ```bash
-uv tree
+# Full workspace sync including prototyping notebooks
+uv sync --all-packages
+```
+
+### View Dependency Tree
+
+```bash
+# Core platform dependency tree (excluding experiments)
+uv tree --package riva-agent
+
+# Full workspace dependency tree
+uv tree --all-packages
 ```
 
 ### Local Dev Stack Automation

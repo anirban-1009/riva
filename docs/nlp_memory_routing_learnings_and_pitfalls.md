@@ -1,6 +1,6 @@
 # NLP Memory Routing: Consolidated Learnings, Deviations, and Pitfalls
 
-> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/NLP-Memory-Routing-Learnings-and-Pitfalls) — the wiki is the canonical source; update it first.
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/NLP-Memory-Routing-Learnings-And-Pitfalls) — the wiki is the canonical source; update it first.
 
 ## Summary
 
