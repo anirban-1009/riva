@@ -19,6 +19,9 @@ dependencies = [
     "en-core-web-sm",
 ]
 
+[project.scripts]
+riva = "riva_agent.cli:main"
+
 [tool.uv.workspace]
 members = [
     "common",

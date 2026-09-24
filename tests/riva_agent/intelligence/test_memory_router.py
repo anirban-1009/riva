@@ -55,3 +55,53 @@ def test_memory_router_helpers():
     assert isinstance(event, AgentMemoryEvent)
     assert event.is_explicit is True
     assert event.should_extract_memory is True
+
+
+def test_memory_router_config_integration(monkeypatch):
+    from unittest.mock import patch, MagicMock
+    from riva_agent import config
+    from riva_agent.intelligence.memory_router import MemoryRouter, get_memory_router
+
+    # 1. By default, enable_laya reflects config.MEMORY_ROUTER_LAYA_ENABLED
+    monkeypatch.setattr(config, "MEMORY_ROUTER_LAYA_ENABLED", False)
+    r_default = MemoryRouter()
+    assert r_default.enable_laya is False
+    assert r_default.agent is None
+
+    # 2. Explicit enable_laya parameter overrides config
+    with patch("laya_mlx.load"):
+        r_explicit_true = MemoryRouter(enable_laya=True)
+        assert r_explicit_true.enable_laya is True
+
+    r_explicit_false = MemoryRouter(enable_laya=False)
+    assert r_explicit_false.enable_laya is False
+
+    # 3. get_memory_router dynamically responds to config or explicit parameter
+    monkeypatch.setattr(config, "MEMORY_ROUTER_LAYA_ENABLED", False)
+    r1 = get_memory_router()
+    assert r1.enable_laya is False
+
+    with patch("laya_mlx.load"):
+        r2 = get_memory_router(enable_laya=True)
+        assert r2.enable_laya is True
+
+    r3 = get_memory_router(enable_laya=False)
+    assert r3.enable_laya is False
+
+    # 4. Verify Laya inference is invoked when agent is present
+    mock_agent = MagicMock()
+    mock_agent.predict.return_value = {
+        "answers": {
+            "memory_category": {
+                "choice": "durable_profile",
+                "probabilities": {"durable_profile": 0.9, "momentary_state": 0.1},
+            }
+        }
+    }
+    r_laya = MemoryRouter(enable_laya=False)
+    r_laya.agent = mock_agent
+
+    event = r_laya.route("I live in Munich")
+    assert event.should_extract_memory is True
+    assert mock_agent.predict.called
+
