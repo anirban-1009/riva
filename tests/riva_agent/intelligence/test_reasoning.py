@@ -22,7 +22,7 @@ def mock_spacy():
 
 @pytest.fixture
 def mock_laya():
-    with patch("laya_mlx.load") as mock_load:
+    with patch("laya_mlx.load", create=True) as mock_load:
         mock_agent = MagicMock()
         # Mock predict to return a response with probabilities
         mock_agent.predict.return_value = {
