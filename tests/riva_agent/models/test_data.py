@@ -1,4 +1,3 @@
-import pytest
 from riva_agent.models.data import (
     AssistantMessage,
     ChatCompletionRequest,
@@ -11,6 +10,7 @@ from riva_agent.models.data import (
     ModelList,
     StreamChoice,
 )
+
 
 def test_chat_message_flattening():
     # Test plain string content
@@ -33,20 +33,16 @@ def test_chat_message_flattening():
     msg3 = ChatMessage(role="user", content=no_text_content)
     assert msg3.content == ""
 
+
 def test_chat_completion_request():
     messages = [ChatMessage(role="user", content="Hi")]
-    req = ChatCompletionRequest(
-        model="gpt-4",
-        messages=messages,
-        stream=True,
-        temperature=0.7,
-        max_tokens=100
-    )
+    req = ChatCompletionRequest(model="gpt-4", messages=messages, stream=True, temperature=0.7, max_tokens=100)
     assert req.model == "gpt-4"
     assert len(req.messages) == 1
     assert req.stream is True
     assert req.temperature == 0.7
     assert req.max_tokens == 100
+
 
 def test_dataclass_integrity():
     # Test Delta
@@ -75,9 +71,7 @@ def test_dataclass_integrity():
 
     # Test Choice & ChatCompletionResponse
     choice = Choice(message=msg, index=0, finish_reason="stop")
-    resp = ChatCompletionResponse(
-        id="resp-1", created=123456, model="test-model", choices=[choice]
-    )
+    resp = ChatCompletionResponse(id="resp-1", created=123456, model="test-model", choices=[choice])
     assert resp.id == "resp-1"
     assert resp.object == "chat.completion"
     assert len(resp.choices) == 1
@@ -89,4 +83,3 @@ def test_dataclass_integrity():
     model_list = ModelList(data=[model])
     assert len(model_list.data) == 1
     assert model_list.object == "list"
-

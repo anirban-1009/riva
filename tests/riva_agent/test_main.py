@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from riva_agent.__main__ import main
 
 

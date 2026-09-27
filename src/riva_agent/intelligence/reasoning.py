@@ -2,8 +2,8 @@ import re
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional
-import numpy as np
+from typing import Any, Dict, Optional
+
 import spacy
 
 
@@ -25,7 +25,6 @@ class HybridDecision:
 
 
 class ThinkingRouter:
-
     def __init__(self, spacy_model: str = "en_core_web_sm", enable_laya: bool = False):
         try:
             self.nlp = spacy.load(spacy_model, exclude=["ner"])
@@ -54,17 +53,18 @@ class ThinkingRouter:
         # Mathematical expressions (isolated symbols or inequalities)
         # Avoid matching date patterns (e.g. 03/12/2022) as arithmetic division
         self.strict_math_re = re.compile(
-            r"(\b[xyzabc]\s*[><=!]=?\s*\d+"                      # x > 5, y <= 2
-            r"|\d+\s*[\+\*]\s*\d+"                               # 3 + 4, 2 * 5
-            r"|\d+\s+\/\s+\d+"                                  # 10 / 2 (spaces required to avoid dates)
-            r"|\b\d+[xyz]\b"                                     # 3x, 4y
+            r"(\b[xyzabc]\s*[><=!]=?\s*\d+"  # x > 5, y <= 2
+            r"|\d+\s*[\+\*]\s*\d+"  # 3 + 4, 2 * 5
+            r"|\d+\s+\/\s+\d+"  # 10 / 2 (spaces required to avoid dates)
+            r"|\b\d+[xyz]\b"  # 3x, 4y
             r"|\beigen(value|vector)\b|\bmatrix\b)",
-            re.IGNORECASE
+            re.IGNORECASE,
         )
 
         # Word problem heuristics (relational age/quantity patterns)
         self.word_problem_re = re.compile(
-            r"(times (older|younger|more|as)|twice as|how (old|many|much) (are|is|will)|assuming integer|sum of|ratio of)",
+            r"(times (older|younger|more|as)|twice as|how (old|many|much) (are|is|will)|"
+            r"assuming integer|sum of|ratio of)",
             re.IGNORECASE,
         )
 
@@ -73,10 +73,14 @@ class ThinkingRouter:
             "complexity": {
                 "type": "choice",
                 "instructions": (
-                    "Rate the computational, algorithmic, or architectural difficulty of answering this query:\n"
-                    "- 'none': Chit-chat, casual conversation, lookup questions, summaries, text rewrites, or open-ended ideas.\n"
-                    "- 'low': Multi-step instruction following, formatted data extraction, or planning tasks.\n"
-                    "- 'high': Mathematical proofs, quantitative word problems, code debugging, or system design trade-offs."
+                    "Rate the computational, algorithmic, or architectural difficulty of "
+                    "answering this query:\n"
+                    "- 'none': Chit-chat, casual conversation, lookup questions, summaries, "
+                    "text rewrites, or open-ended ideas.\n"
+                    "- 'low': Multi-step instruction following, formatted data extraction, "
+                    "or planning tasks.\n"
+                    "- 'high': Mathematical proofs, quantitative word problems, code debugging, "
+                    "or system design trade-offs."
                 ),
                 "criteria": ["none", "low", "high"],
             }
@@ -87,6 +91,7 @@ class ThinkingRouter:
         if enable_laya:
             try:
                 import laya_mlx as laya
+
                 self.agent = laya.load("aac6fef/laya-mlx")
                 _ = self.agent.predict("warmup", self.laya_schema)
             except Exception:
@@ -110,9 +115,7 @@ class ThinkingRouter:
             )
 
         # Lookups, Formula Recalls, and Explanations
-        if self.factoid_lookup_re.match(
-            clean
-        ) or self.explanation_bypass_re.match(clean):
+        if self.factoid_lookup_re.match(clean) or self.explanation_bypass_re.match(clean):
             return HybridDecision(
                 query=query,
                 requires_thinking=False,
@@ -137,25 +140,41 @@ class ThinkingRouter:
         doc = self.nlp(clean)
         lemmas = {t.lemma_.lower() for t in doc}
         tokens_text = {t.text.lower() for t in doc}
-    
+
         # 1. High Complexity Technical & Mathematical Keywords
         math_academic_terms = {
-            "eigenvalue", "eigenvalues", "eigenvector", "eigenvectors", 
-            "matrix", "matrices", "derivative", "integral", "polynomial", 
-            "asymptotic", "np-hard", "np-complete", "stochastic"
+            "eigenvalue",
+            "eigenvalues",
+            "eigenvector",
+            "eigenvectors",
+            "matrix",
+            "matrices",
+            "derivative",
+            "integral",
+            "polynomial",
+            "asymptotic",
+            "np-hard",
+            "np-complete",
+            "stochastic",
         }
         has_math_terms = bool(tokens_text & math_academic_terms)
-    
+
         # 2. Algebraic constraints & symbols (e.g. x > 5, y < 2, 3x - 4y)
         has_inequality_or_algebra = bool(
-            re.search(r"(\b[a-z]\s*[><=!]=?\s*\d+|\b\d+[a-z]\b|\b[a-z]\s*[\+\-\*\/]\s*[a-z]\b)", clean_lower)
+            re.search(
+                r"(\b[a-z]\s*[><=!]=?\s*\d+|\b\d+[a-z]\b|\b[a-z]\s*[\+\-\*\/]\s*[a-z]\b)",
+                clean_lower,
+            )
         )
-    
+
         # 3. Quantitative Word Problems (age, ratios, relational math)
         has_word_problem = bool(
-            re.search(r"(times\s+(as\s+)?(older|younger|more|as|greater)|twice\s+as|how\s+(old|many|much)\s+(is|are|will)|assuming\s+integer)", clean_lower)
+            re.search(
+                r"(times\s+(as\s+)?(older|younger|more|as|greater)|twice\s+as|how\s+(old|many|much)\s+(is|are|will)|assuming\s+integer)",
+                clean_lower,
+            )
         )
-    
+
         # Combined HIGH reasoning trigger
         if has_math_terms or (has_inequality_or_algebra and "solve" in lemmas) or has_word_problem:
             return HybridDecision(
@@ -163,21 +182,21 @@ class ThinkingRouter:
                 requires_thinking=True,
                 effort_level=ReasoningEffort.HIGH,
                 source="stage2_math_logic_detector",
-                latency_ms=(time.perf_counter() - t_start) * 1000
+                latency_ms=(time.perf_counter() - t_start) * 1000,
             )
-    
+
         # 4. Structured & Constrained Tasks (LOW effort)
         is_extraction = bool(lemmas & {"extract", "parse", "convert", "format"})
         is_planning = bool(lemmas & {"plan", "schedule", "itinerary", "routine", "diet", "meal"})
         has_constraints = any(t in {"no", "without", "under", "limit", "only", "every"} for t in tokens_text)
-    
+
         if is_extraction or (is_planning and has_constraints):
             return HybridDecision(
                 query=query,
                 requires_thinking=True,
                 effort_level=ReasoningEffort.LOW,
                 source="stage2_structured_task_detector",
-                latency_ms=(time.perf_counter() - t_start) * 1000
+                latency_ms=(time.perf_counter() - t_start) * 1000,
             )
 
         # -------------------------------------------------------------
@@ -212,9 +231,22 @@ class ThinkingRouter:
 
         # Fast deterministic semantic heuristic (< 0.05 ms, 0 MB RAM)
         complex_reasoning_keywords = {
-            "trade-off", "tradeoff", "architecture", "compare", "contrast",
-            "step by step", "step-by-step", "derive", "optimize", "optimization",
-            "bottleneck", "algorithm", "concurrency", "distributed", "quantum", "entanglement"
+            "trade-off",
+            "tradeoff",
+            "architecture",
+            "compare",
+            "contrast",
+            "step by step",
+            "step-by-step",
+            "derive",
+            "optimize",
+            "optimization",
+            "bottleneck",
+            "algorithm",
+            "concurrency",
+            "distributed",
+            "quantum",
+            "entanglement",
         }
         has_complex_reasoning = any(k in clean_lower for k in complex_reasoning_keywords) or len(tokens_text) > 80
 
@@ -243,11 +275,7 @@ class ThinkingRouter:
                 if isinstance(content, str):
                     user_query = content
                 elif isinstance(content, list):
-                    parts = [
-                        p.get("text", "")
-                        for p in content
-                        if isinstance(p, dict) and p.get("type") == "text"
-                    ]
+                    parts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
                     user_query = "".join(parts)
                 break
 
@@ -286,4 +314,3 @@ def should_use_extended_thinking(query: str | list[dict[str, Any]]) -> bool:
     """Backward-compatible helper returning True if reasoning is needed."""
     decision = decide_reasoning_effort(query)
     return decision.requires_thinking
-

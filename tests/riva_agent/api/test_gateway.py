@@ -1,9 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 
-from common.profile.store import ProfileStore
 from common.memory.store import EpisodicStore
+from common.profile.store import ProfileStore
 from riva_agent import config
 from riva_agent.api.gateway import app
 
@@ -186,17 +187,18 @@ async def test_chat_completions_streaming():
                     if line:
                         lines.append(line)
 
-                assert any("role" in l for l in lines)
-                assert any("token 1" in l for l in lines)
-                assert any("token 2" in l for l in lines)
-                assert any("[DONE]" in l for l in lines)
+                assert any("role" in line for line in lines)
+                assert any("token 1" in line for line in lines)
+                assert any("token 2" in line for line in lines)
+                assert any("[DONE]" in line for line in lines)
 
 
 @pytest.mark.asyncio
 async def test_show_model_ollama():
-    with patch("riva_agent.api.gateway.config") as mock_config, patch(
-        "riva_agent.api.gateway.OllamaProvider"
-    ) as mock_ollama:
+    with (
+        patch("riva_agent.api.gateway.config") as mock_config,
+        patch("riva_agent.api.gateway.OllamaProvider") as mock_ollama,
+    ):
         mock_config.PROVIDER = "ollama"
         mock_provider = MagicMock()
         mock_provider.base_url = "http://localhost:11434"

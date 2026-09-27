@@ -2,7 +2,6 @@ import argparse
 import json
 import os
 import sys
-from pathlib import Path
 
 import httpx
 
@@ -27,7 +26,10 @@ def cmd_ask(args: argparse.Namespace) -> int:
     try:
         with httpx.stream("POST", endpoint, json=payload, timeout=60.0) as response:
             if response.status_code != 200:
-                print(f"Error from Riva Gateway ({response.status_code}): {response.read().decode('utf-8')}", file=sys.stderr)
+                print(
+                    f"Error from Riva Gateway ({response.status_code}): {response.read().decode('utf-8')}",
+                    file=sys.stderr,
+                )
                 return 1
 
             for line in response.iter_lines():
@@ -53,7 +55,11 @@ def cmd_ask(args: argparse.Namespace) -> int:
             sys.stdout.flush()
             return 0
     except httpx.ConnectError:
-        print(f"Failed to connect to Riva Gateway at {endpoint}. Is the server running? (Try: uv run python -m riva_agent)", file=sys.stderr)
+        print(
+            f"Failed to connect to Riva Gateway at {endpoint}. Is the server running? "
+            f"(Try: uv run python -m riva_agent)",
+            file=sys.stderr,
+        )
         return 1
     except Exception as e:
         print(f"Error querying Riva: {e}", file=sys.stderr)
@@ -69,7 +75,7 @@ def cmd_profile_list(args: argparse.Namespace) -> int:
         return 0
 
     print(f"{'Category':<15} {'Key':<30} {'Value'}")
-    print(f"{'-'*14:<15} {'-'*29:<30} {'-'*30}")
+    print(f"{'-' * 14:<15} {'-' * 29:<30} {'-' * 30}")
     for e in entries:
         print(f"{e.category:<15} {e.key:<30} {e.value}")
     return 0
@@ -114,7 +120,7 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
             print("No pending memory candidates.")
             return 0
         print(f"{'ID':<6} {'Fact':<40} {'Source'}")
-        print(f"{'-'*5:<6} {'-'*39:<40} {'-'*30}")
+        print(f"{'-' * 5:<6} {'-' * 39:<40} {'-' * 30}")
         for p in pending:
             print(f"{p.id:<6} {p.fact:<40} {p.source_snippet}")
         return 0
@@ -131,7 +137,7 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
         return 0
 
     print(f"{'ID':<6} {'Role':<10} {'Turn Snippet':<50} {'Created'}")
-    print(f"{'-'*5:<6} {'-'*9:<10} {'-'*49:<50} {'-'*20}")
+    print(f"{'-' * 5:<6} {'-' * 9:<10} {'-' * 49:<50} {'-' * 20}")
     for r in reversed(rows):
         snippet = r["content"][:48].replace("\n", " ") + ("..." if len(r["content"]) > 48 else "")
         print(f"{r['id']:<6} {r['role']:<10} {snippet:<50} {r['created_at']}")
@@ -200,7 +206,13 @@ def build_parser() -> argparse.ArgumentParser:
     prof_set = profile_sub.add_parser("set", help="Set a profile entry")
     prof_set.add_argument("key", type=str, help="Profile key")
     prof_set.add_argument("value", type=str, help="Profile value")
-    prof_set.add_argument("--category", "-c", type=str, default="general", help="Category (e.g. goals, facts, preferences)")
+    prof_set.add_argument(
+        "--category",
+        "-c",
+        type=str,
+        default="general",
+        help="Category (e.g. goals, facts, preferences)",
+    )
     prof_set.set_defaults(func=cmd_profile_set)
 
     prof_get = profile_sub.add_parser("get", help="Get a profile entry value")

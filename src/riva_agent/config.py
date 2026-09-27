@@ -50,6 +50,7 @@ DATA_DIR: Path = Path(os.environ.get("RIVA_DATA_DIR", _config.get("data_dir", Pa
 # Default concrete model to dispatch Assistant Mode ("riva") requests to.
 ASSISTANT_MODEL: str = _config.get("assistant_model") or MODEL or "llama3:8b"
 
+
 def _resolve_memory_router_laya(cfg: dict | None = None) -> bool:
     if cfg is None:
         cfg = _config
@@ -67,4 +68,3 @@ def _resolve_memory_router_laya(cfg: dict | None = None) -> bool:
 # and uses the in-process aac6fef/laya-mlx SLM (~800 MB RAM).
 MEMORY_ROUTER_LAYA_ENABLED: bool = _resolve_memory_router_laya(_config)
 MEMORY_LAYA_ENABLED: bool = MEMORY_ROUTER_LAYA_ENABLED
-

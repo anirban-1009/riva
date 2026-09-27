@@ -83,9 +83,7 @@ class OllamaProvider:
 
     def __init__(self, base_url: str | None = None, model: str = "gemma") -> None:
         """Initialize the Ollama provider with base URL and model name."""
-        self.base_url = base_url or os.getenv(
-            "OLLAMA_BASE_URL", "http://localhost:11434"
-        )
+        self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         self.model = model
 
     @classmethod
@@ -167,9 +165,7 @@ class OllamaProvider:
                 name = item.get("name")
                 if not name:
                     continue
-                caps: list[str] = [
-                    k for k, v in item.get("capabilities", {}).items() if v
-                ]
+                caps: list[str] = [k for k, v in item.get("capabilities", {}).items() if v]
                 cache[name] = caps
                 if ":" in name:
                     cache[name.split(":")[0]] = caps
@@ -280,11 +276,7 @@ class OpenAICompatibleProvider:
         api_key: str | None = None,
         model: str = "default",
     ) -> None:
-        self.base_url = (
-            base_url
-            or os.getenv("OPENAI_BASE_URL")
-            or "https://api.openai.com/v1"
-        ).rstrip("/")
+        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
 
@@ -348,9 +340,7 @@ class OpenAICompatibleProvider:
     async def list_models(self) -> list[str]:
         """Return model ids available on this endpoint, via the standard GET /models."""
         client = self._get_client()
-        response = await client.get(
-            f"{self.base_url}/models", headers=self._auth_headers()
-        )
+        response = await client.get(f"{self.base_url}/models", headers=self._auth_headers())
         response.raise_for_status()
         return [m["id"] for m in response.json().get("data", [])]
 
@@ -365,9 +355,7 @@ class OpenAICompatibleProvider:
     ) -> str:
         """Send a chat prompt synchronously and return the assistant response."""
         url = f"{self.base_url}/chat/completions"
-        payload = self._build_payload(
-            self.model, messages, False, temperature, max_tokens, think, extra
-        )
+        payload = self._build_payload(self.model, messages, False, temperature, max_tokens, think, extra)
 
         with httpx.Client(timeout=_REQUEST_TIMEOUT) as client:
             try:
@@ -391,9 +379,7 @@ class OpenAICompatibleProvider:
         """Send a chat prompt asynchronously and return the assistant response."""
         client = self._get_client()
         url = f"{self.base_url}/chat/completions"
-        payload = self._build_payload(
-            self.model, messages, False, temperature, max_tokens, think, extra
-        )
+        payload = self._build_payload(self.model, messages, False, temperature, max_tokens, think, extra)
 
         try:
             response = await client.post(url, json=payload, headers=self._auth_headers())
@@ -416,14 +402,10 @@ class OpenAICompatibleProvider:
         """Stream chat tokens asynchronously, parsing the OpenAI SSE format."""
         client = self._get_client()
         url = f"{self.base_url}/chat/completions"
-        payload = self._build_payload(
-            self.model, messages, True, temperature, max_tokens, think, extra
-        )
+        payload = self._build_payload(self.model, messages, True, temperature, max_tokens, think, extra)
 
         try:
-            async with client.stream(
-                "POST", url, json=payload, headers=self._auth_headers()
-            ) as response:
+            async with client.stream("POST", url, json=payload, headers=self._auth_headers()) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line or not line.startswith("data: "):
@@ -466,9 +448,7 @@ def create_provider(
     try:
         cls = _PROVIDERS[name.lower()]
     except KeyError:
-        raise ValueError(
-            f"Unknown LLM provider {name!r}; expected one of {sorted(_PROVIDERS)}"
-        ) from None
+        raise ValueError(f"Unknown LLM provider {name!r}; expected one of {sorted(_PROVIDERS)}") from None
     kwargs: dict[str, Any] = {}
     if model:
         kwargs["model"] = model

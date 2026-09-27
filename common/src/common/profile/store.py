@@ -71,9 +71,7 @@ class ProfileStore:
     def get(self, key: str) -> Optional[str]:
         """Get the value of a profile key, or None if not found."""
         with self._get_connection() as conn:
-            row = conn.execute(
-                "SELECT value FROM profile WHERE key = ?;", (key.strip(),)
-            ).fetchone()
+            row = conn.execute("SELECT value FROM profile WHERE key = ?;", (key.strip(),)).fetchone()
             return row["value"] if row else None
 
     def get_entry(self, key: str) -> Optional[ProfileEntry]:

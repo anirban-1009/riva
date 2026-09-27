@@ -1,12 +1,12 @@
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from importlib.metadata import PackageNotFoundError, version
-import re
 from typing import Any, AsyncGenerator, Callable
 
 import httpx
@@ -17,6 +17,12 @@ from common import get_episodic_store, get_profile_store
 from common.llm.providers import LLMProvider, OllamaProvider, create_provider
 from riva_agent import config
 from riva_agent.intelligence.memory_router import route_memory
+from riva_agent.intelligence.reasoning import (
+    HybridDecision,
+    ReasoningEffort,
+    decide_reasoning_effort,
+    get_thinking_router,
+)
 from riva_agent.models.data import (
     AssistantMessage,
     ChatCompletionRequest,
@@ -27,12 +33,6 @@ from riva_agent.models.data import (
     Model,
     ModelList,
     StreamChoice,
-)
-from riva_agent.intelligence.reasoning import (
-    HybridDecision,
-    ReasoningEffort,
-    decide_reasoning_effort,
-    get_thinking_router,
 )
 
 try:
@@ -77,9 +77,7 @@ async def stream_generator(
     on_complete: Callable[[str], None] | None = None,
 ) -> AsyncGenerator[str, None]:
     """Generate server-sent events for chat completion chunks."""
-    token_iter = provider.chat_stream(
-        messages, temperature=temperature, max_tokens=max_tokens, think=think
-    ).__aiter__()
+    token_iter = provider.chat_stream(messages, temperature=temperature, max_tokens=max_tokens, think=think).__aiter__()
     pending: asyncio.Task[Any] | None = None
     collected_tokens: list[str] = []
     try:
@@ -90,9 +88,7 @@ async def stream_generator(
             choices=[StreamChoice(delta=Delta(role="assistant"))],
         )
         role_dict = asdict(role_chunk)
-        role_dict["choices"][0]["delta"] = {
-            k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None
-        }
+        role_dict["choices"][0]["delta"] = {k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None}
         yield f"data: {json.dumps(role_dict)}\n\n"
 
         while True:
@@ -150,9 +146,7 @@ async def stream_generator(
             choices=[StreamChoice(index=0, finish_reason="stop")],
         )
         done_dict = asdict(done_chunk)
-        done_dict["choices"][0]["delta"] = {
-            k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None
-        }
+        done_dict["choices"][0]["delta"] = {k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None}
         yield f"data: {json.dumps(done_dict)}\n\n"
         yield "data: [DONE]\n\n"
     except Exception as e:
@@ -178,9 +172,7 @@ async def stream_generator(
 @app.get("/v1/models")
 async def list_models() -> dict[str, Any]:
     """List available models from the configured backend in OpenAI-compatible format."""
-    provider = create_provider(
-        config.PROVIDER, base_url=config.OPENAI_BASE_URL, api_key=config.OPENAI_API_KEY
-    )
+    provider = create_provider(config.PROVIDER, base_url=config.OPENAI_BASE_URL, api_key=config.OPENAI_API_KEY)
     try:
         model_ids = await provider.list_models()
         if "riva" not in model_ids:
@@ -196,9 +188,7 @@ async def list_models() -> dict[str, Any]:
 async def show_model(request: dict[str, Any]) -> Any:
     """Proxy Ollama's native /api/show so Ollama-aware clients can query model metadata."""
     if config.PROVIDER != "ollama":
-        raise HTTPException(
-            status_code=501, detail="/api/show is only available with the Ollama provider"
-        )
+        raise HTTPException(status_code=501, detail="/api/show is only available with the Ollama provider")
     provider = OllamaProvider()
     client = provider._get_client()
     try:
@@ -216,7 +206,7 @@ async def show_model(request: dict[str, Any]) -> Any:
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest) -> Any:
     """Handle chat completion requests, supporting streaming, non-streaming, and assistant mode."""
-    is_assistant_mode = (request.model.strip().lower() == "riva")
+    is_assistant_mode = request.model.strip().lower() == "riva"
 
     if is_assistant_mode:
         model = config.MODEL or config.ASSISTANT_MODEL
@@ -230,9 +220,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         api_key=config.OPENAI_API_KEY,
     )
 
-    messages_payload = [
-        {"role": msg.role, "content": msg.content} for msg in request.messages
-    ]
+    messages_payload = [{"role": msg.role, "content": msg.content} for msg in request.messages]
 
     temperature = request.temperature
     max_tokens = request.max_tokens
@@ -260,9 +248,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         # 1. Profile Context injection
         profile_ctx = profile_store.format_context()
         assistant_persona = "You are Riva, a private personal assistant that knows me."
-        system_instruction = (
-            f"{assistant_persona}\n\n{profile_ctx}" if profile_ctx else assistant_persona
-        )
+        system_instruction = f"{assistant_persona}\n\n{profile_ctx}" if profile_ctx else assistant_persona
 
         if messages_payload and messages_payload[0]["role"] == "system":
             messages_payload[0]["content"] = f"{system_instruction}\n\n{messages_payload[0]['content']}"
@@ -311,9 +297,11 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
 
     on_complete_cb: Callable[[str], None] | None = None
     if is_assistant_mode and episodic_store:
+
         def _save_assistant_turn(text: str) -> None:
             if text.strip():
                 episodic_store.log_turn(session_id, "assistant", text)
+
         on_complete_cb = _save_assistant_turn
 
     if stream:

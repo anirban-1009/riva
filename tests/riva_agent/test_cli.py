@@ -1,9 +1,10 @@
 from unittest.mock import MagicMock, patch
+
 import pytest
 
-from riva_agent import cli, config
-from common.profile.store import ProfileStore
 from common.memory.store import EpisodicStore
+from common.profile.store import ProfileStore
+from riva_agent import cli, config
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +104,7 @@ def test_cli_ask_success(capsys):
     mock_response.iter_lines.return_value = [
         'data: {"choices": [{"delta": {"content": "You work "}}]}',
         'data: {"choices": [{"delta": {"content": "at Stripe."}}]}',
-        'data: [DONE]',
+        "data: [DONE]",
     ]
 
     with patch("httpx.stream") as mock_stream:

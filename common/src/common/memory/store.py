@@ -58,9 +58,7 @@ class EpisodicStore:
                 );
                 """
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id, id);"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_turns_session ON turns(session_id, id);")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS pending_memories (
@@ -132,7 +130,8 @@ class EpisodicStore:
         """List candidate memories filtered by status (default: 'pending')."""
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, fact, source_snippet, status, created_at FROM pending_memories WHERE status = ? ORDER BY id ASC;",
+                "SELECT id, fact, source_snippet, status, created_at "
+                "FROM pending_memories WHERE status = ? ORDER BY id ASC;",
                 (status.strip().lower(),),
             ).fetchall()
 

@@ -204,7 +204,7 @@ stop_service_on_port() {
     if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
         log_info "Stopping ${name} (PID: ${pid})..."
         kill "${pid}" 2>/dev/null || true
-        
+
         # Wait up to 5 seconds for graceful shutdown
         local count=0
         while kill -0 "${pid}" 2>/dev/null && [[ $count -lt 5 ]]; do
@@ -235,7 +235,7 @@ stop_all() {
 # ------------------------------------------------------------------------------
 status_all() {
     echo -e "${BOLD}--- Riva Dev Stack Status ---${NC}"
-    
+
     # MLX Server
     local mlx_pid
     mlx_pid=$(get_pid_on_port "${MLX_PORT}")
