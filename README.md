@@ -125,6 +125,88 @@ uv run --package job-genie python -m job_genie
 
 ---
 
+## CLI Usage Reference (`riva`)
+
+The `riva` CLI is the primary trust and control surface for interacting with Riva in assistant mode, inspecting/steering persistent profiles and memory, and managing local storage lifecycle.
+
+You can invoke commands via `uv run riva <subcommand>` or directly via `riva <subcommand>` when the environment is activated.
+
+### 1. Terminal Assistant (`riva ask`)
+
+Query Riva directly in Assistant Mode with streaming responses:
+
+```bash
+# Query the assistant (requires the stack or gateway to be running on port 8085)
+uv run riva ask "What do you remember about my current location and dietary constraints?"
+```
+
+### 2. Profile Management (`riva profile`)
+
+Inspect and modify durable user facts, preferences, constraints, and goals stored in `~/.riva/profile.db`:
+
+```bash
+# List all profile entries (or filter by category: facts, goals, constraints, preferences)
+uv run riva profile list
+uv run riva profile list --category facts
+
+# Set or update a profile entry
+uv run riva profile set location "Munich" --category facts
+uv run riva profile set diet "Peanut allergy" --category constraints
+
+# Retrieve a specific profile key
+uv run riva profile get location
+
+# Delete a profile key
+uv run riva profile delete location
+```
+
+### 3. Memory & Provenance (`riva memory`)
+
+Review recorded episodic conversation history, inspect staged candidate facts, and control memory retention in `~/.riva/memory.db`:
+
+```bash
+# List recent conversation turns across sessions
+uv run riva memory list
+uv run riva memory list --limit 25
+
+# Inspect staged candidate memories pending human review
+uv run riva memory list --pending
+
+# Accept a pending memory fact into the persistent profile
+uv run riva memory accept <id>
+
+# Reject a pending candidate memory
+uv run riva memory reject <id>
+
+# Permanently forget an episodic conversation turn
+uv run riva memory forget <id>
+```
+
+### 4. Storage Lifecycle & Hygiene (`riva storage`)
+
+Maintain local disk efficiency, inspect table footprints, compact SQLite databases, prune old history, and manage backups:
+
+```bash
+# Show storage telemetry for databases, WAL overhead, row counts, and logs footprint
+uv run riva storage status
+
+# Compact databases and truncate active WAL checkpoints
+uv run riva storage vacuum
+
+# Preview turns and unreviewed pending memory deletions (dry run)
+uv run riva storage prune --dry-run
+
+# Prune old conversation turns (default: 30 days) and expired pending candidates (default: 7 days),
+# and automatically rotate logs exceeding 50MB (copytruncate, retaining 3 rotations)
+uv run riva storage prune
+uv run riva storage prune --turns-days 60 --pending-days 14
+
+# Create an online point-in-time snapshot backup of all databases in ~/.riva/backups/
+uv run riva storage backup
+```
+
+---
+
 ## Design Principles
 
 - Modular architecture

@@ -163,6 +163,61 @@ class EpisodicStore:
             conn.commit()
             return cur.rowcount > 0
 
+    def get_stats(self) -> dict:
+        """Return telemetry about the episodic store."""
+        stats = {"file_size": 0, "wal_size": 0, "shm_size": 0, "turns": 0, "pending": 0}
+        db_path = Path(self.db_path)
+        if db_path.exists():
+            stats["file_size"] = db_path.stat().st_size
+
+        wal_path = Path(f"{self.db_path}-wal")
+        shm_path = Path(f"{self.db_path}-shm")
+        if wal_path.exists():
+            stats["wal_size"] = wal_path.stat().st_size
+        if shm_path.exists():
+            stats["shm_size"] = shm_path.stat().st_size
+
+        with self._get_connection() as conn:
+            stats["turns"] = conn.execute("SELECT count(*) FROM turns").fetchone()[0]
+            stats["pending"] = conn.execute("SELECT count(*) FROM pending_memories").fetchone()[0]
+
+        return stats
+
+    def vacuum(self) -> None:
+        """Compact the database and truncate the WAL file."""
+        with self._get_connection() as conn:
+            conn.execute("VACUUM;")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+
+    def backup(self, backup_path: Path | str) -> None:
+        """Create an online snapshot using VACUUM INTO."""
+        backup_path = Path(backup_path)
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._get_connection() as conn:
+            conn.execute("VACUUM INTO ?;", (str(backup_path),))
+
+    def prune(self, turns_days: int = 30, pending_days: int = 7, dry_run: bool = False) -> dict:
+        """Prune old conversation turns and expired pending memories."""
+        results = {"turns_deleted": 0, "pending_deleted": 0}
+
+        with self._get_connection() as conn:
+            # Turn pruning
+            turns_query = "SELECT count(*) FROM turns WHERE created_at < datetime('now', ?);"
+            turns_val = f"-{turns_days} days"
+            results["turns_deleted"] = conn.execute(turns_query, (turns_val,)).fetchone()[0]
+
+            # Pending pruning
+            pending_query = "SELECT count(*) FROM pending_memories WHERE created_at < datetime('now', ?);"
+            pending_val = f"-{pending_days} days"
+            results["pending_deleted"] = conn.execute(pending_query, (pending_val,)).fetchone()[0]
+
+            if not dry_run:
+                conn.execute("DELETE FROM turns WHERE created_at < datetime('now', ?);", (turns_val,))
+                conn.execute("DELETE FROM pending_memories WHERE created_at < datetime('now', ?);", (pending_val,))
+                conn.commit()
+
+        return results
+
 
 _episodic_store: Optional[EpisodicStore] = None
 

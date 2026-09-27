@@ -126,9 +126,9 @@ gantt
   - [x] Recall works in fresh sessions without restating facts.
   - [x] Pass-through mode remains untouched.
   - [x] Memory is inspectable and correctable (`list` / `forget`).
-  - [ ] Storage lifecycle: Compaction (`vacuum`), turn pruning, and 7-day pending candidate expiry verified.
-  - [ ] Log bounds: Gateway and daemon log rotation prevents unbounded disk growth.
-  - [ ] Disaster recovery: Online snapshot backup and restore verified via CLI.
+  - [x] Storage lifecycle: Compaction (`vacuum`), turn pruning, and 7-day pending candidate expiry verified.
+  - [x] Log bounds: Gateway and daemon log rotation prevents unbounded disk growth.
+  - [x] Disaster recovery: Online snapshot backup and restore verified via CLI.
   - [x] Privacy audit: Zero outbound network traffic during assistant sessions.
 
 ---

@@ -169,3 +169,120 @@ applies automatically):
 ```bash
 uv run --package riva-agent python -m riva_agent
 ```
+
+## Riva CLI: Trust Surface & Storage Operations
+
+The `riva` CLI (`riva_agent/cli.py`) serves as the core user trust surface and local hygiene tool. It allows direct inspection, correction, compaction, and disaster recovery of all local stores without writing custom scripts or raw SQL.
+
+Commands default to operating on databases and logs located in `~/.riva/` (or the directory specified by `RIVA_DATA_DIR`).
+
+### 1. Direct Assistant Querying (`riva ask`)
+
+Stream an end-to-end conversation turn through the assistant pipeline with profile context injection and episodic turn persistence:
+
+```bash
+uv run riva ask "What are my main goals for this quarter?"
+```
+
+### 2. User Profile Management (`riva profile`)
+
+Inspect, update, or prune persistent profile entries stored in `profile.db`:
+
+```bash
+# List all profile entries
+uv run riva profile list
+
+# Filter entries by category (e.g., facts, constraints, goals, preferences)
+uv run riva profile list --category facts
+uv run riva profile list --category constraints
+
+# Retrieve a single key
+uv run riva profile get location
+
+# Set or update a key
+uv run riva profile set location "Munich" --category facts
+uv run riva profile set diet "No peanuts" --category constraints
+
+# Delete a key
+uv run riva profile delete location
+```
+
+### 3. Episodic Memory & Human-in-the-Loop Review (`riva memory`)
+
+Inspect recorded conversation history, review staged candidate facts extracted from past conversations, and permanently purge turns:
+
+```bash
+# List recent conversation turns across sessions
+uv run riva memory list
+uv run riva memory list --limit 20
+
+# View staged candidate memories awaiting human review
+uv run riva memory list --pending
+
+# Accept a staged candidate memory into the durable user profile
+uv run riva memory accept <id>
+
+# Reject an unwanted candidate memory
+uv run riva memory reject <id>
+
+# Permanently delete a sensitive or erroneous conversation turn
+uv run riva memory forget <id>
+```
+
+### 4. Storage Telemetry, Compaction & Hygiene (`riva storage`)
+
+Keep database files compact, reclaim deleted SQLite pages, enforce log bounds, and snapshot databases.
+
+#### Check Storage Telemetry (`status`)
+Aggregates file size on disk, active WAL/SHM file overhead, table row counts, and total log footprint in `~/.riva/logs/`:
+
+```bash
+uv run riva storage status
+```
+
+#### Reclaim Disk Space (`vacuum`)
+Executes `VACUUM` and `PRAGMA wal_checkpoint(TRUNCATE)` on both `memory.db` and `profile.db` to release free pages to the filesystem and truncate WAL logs to zero bytes:
+
+```bash
+uv run riva storage vacuum
+```
+
+#### Retention Pruning & Log Rotation (`prune`)
+Prunes raw conversation turns older than the retention threshold (default: 30 days) and unreviewed candidate memories older than the review threshold (default: 7 days). It also checks `~/.riva/logs/` (`gateway.log`, `mlx_server.log`, `riva_gateway.log`), rotating any log over 50MB using a copytruncate strategy (retaining up to 3 rotations):
+
+```bash
+# Preview deleted rows and log rotation candidates without altering files (dry run)
+uv run riva storage prune --dry-run
+
+# Execute pruning with default thresholds (30 days turns, 7 days pending)
+uv run riva storage prune
+
+# Customize retention windows
+uv run riva storage prune --turns-days 60 --pending-days 14
+# or using the --turns-older-than alias:
+uv run riva storage prune --turns-older-than 45
+```
+
+#### Online Point-in-Time Snapshots (`backup`)
+Uses SQLite `VACUUM INTO` to create non-blocking, consistent point-in-time database snapshots in `~/.riva/backups/`:
+
+```bash
+uv run riva storage backup
+# Outputs created backup paths:
+#   ~/.riva/backups/memory_YYYYMMDD_HHMMSS.db
+#   ~/.riva/backups/profile_YYYYMMDD_HHMMSS.db
+```
+
+#### Disaster Recovery / Restore Procedure
+To restore state from a backup:
+1. Stop running stack services (`./scripts/start_stack.sh stop`).
+2. Copy the backup file over the active store:
+   ```bash
+   cp ~/.riva/backups/memory_20260927_204127.db ~/.riva/memory.db
+   cp ~/.riva/backups/profile_20260927_204127.db ~/.riva/profile.db
+   ```
+3. Remove stale WAL/SHM files:
+   ```bash
+   rm -f ~/.riva/*.db-wal ~/.riva/*.db-shm
+   ```
+4. Restart the stack (`./scripts/start_stack.sh start`).
