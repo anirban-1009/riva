@@ -1,10 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
-
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
+from fastapi.testclient import TestClient
+
 from riva_agent import config
 from riva_agent.api.gateway import app
 
