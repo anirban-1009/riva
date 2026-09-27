@@ -1,9 +1,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
-
 from riva_agent import cli, config
 
 
