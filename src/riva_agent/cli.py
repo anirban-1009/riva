@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import sys
+import uuid
 from datetime import datetime
 
 import httpx
@@ -320,6 +321,54 @@ def cmd_storage_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_session_new(args: argparse.Namespace) -> int:
+    """Start a new chat session."""
+    sid = str(uuid.uuid4())
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    session_file = config.DATA_DIR / "session.id"
+    session_file.write_text(sid)
+    print(f"✔ Started new chat session: {sid}")
+    return 0
+
+
+def cmd_session_id(args: argparse.Namespace) -> int:
+    """Print the active chat session ID."""
+    session_file = config.DATA_DIR / "session.id"
+    if session_file.exists():
+        sid = session_file.read_text().strip()
+        if sid:
+            print(sid)
+            return 0
+    print("No active session ID found.", file=sys.stderr)
+    return 1
+
+
+def cmd_session_list(args: argparse.Namespace) -> int:
+    """List recent conversation sessions from episodic memory."""
+    mem_store = get_episodic_store(config.DATA_DIR / "memory.db")
+    with mem_store._get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT session_id, count(*) as turn_count, max(created_at) as last_turn
+            FROM turns
+            GROUP BY session_id
+            ORDER BY last_turn DESC
+            LIMIT ?;
+            """,
+            (args.limit,),
+        ).fetchall()
+
+    if not rows:
+        print("No recorded chat sessions found.")
+        return 0
+
+    print(f"{'Session ID':<38} {'Turns':<8} {'Last Turn'}")
+    print(f"{'-' * 38:<38} {'-' * 7:<8} {'-' * 20}")
+    for r in rows:
+        print(f"{r['session_id']:<38} {r['turn_count']:<8} {r['last_turn']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="riva",
@@ -415,6 +464,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     storage_backup = storage_sub.add_parser("backup", help="Create an online snapshot of databases")
     storage_backup.set_defaults(func=cmd_storage_backup)
+
+    # riva session ...
+    session_parser = subparsers.add_parser("session", help="Manage assistant chat sessions")
+    session_sub = session_parser.add_subparsers(dest="session_action", required=True)
+
+    sess_new = session_sub.add_parser("new", help="Start a new chat session")
+    sess_new.set_defaults(func=cmd_session_new)
+
+    sess_id = session_sub.add_parser("id", help="Show active chat session ID")
+    sess_id.set_defaults(func=cmd_session_id)
+
+    sess_list = session_sub.add_parser("list", help="List recent chat sessions")
+    sess_list.add_argument("--limit", "-n", type=int, default=15, help="Number of sessions to show")
+    sess_list.set_defaults(func=cmd_session_list)
 
     return parser
 

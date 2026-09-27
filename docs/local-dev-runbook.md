@@ -286,3 +286,32 @@ To restore state from a backup:
    rm -f ~/.riva/*.db-wal ~/.riva/*.db-shm
    ```
 4. Restart the stack (`./scripts/start_stack.sh start`).
+
+### 5. Chat Session Management & Signal Integration
+
+Riva manages conversation context on a per-session basis. This allows conversation turns in `memory.db` to be scoped to discrete dialogues while persistent facts remain global in `profile.db`.
+
+#### Triggering New Sessions from Signal
+When interacting with Riva through Signal (routed via OpenClaw to Riva AI Gateway), users can start a new session at any time:
+- **Instant Reset**: Send `/clear`, `/new_session`, `/start`, or `new session` in Signal. Riva Gateway immediately rotates the active session ID in `~/.riva/session.id` and replies with:
+  > `✨ New chat session started. Previous conversation context has been cleared.`
+  *(This bypasses LLM inference entirely).*
+- **Reset with Query**: Send `/new <your prompt>` (e.g. `/new What are the key priorities this week?`). Riva resets the active session, clears previous turns from the request history, and answers the query in the fresh session.
+- **Direct API Call**:
+  ```bash
+  curl -X POST http://localhost:8085/v1/session/new
+  # Response: {"status":"ok","session_id":"<new-uuid>","message":"✨ New chat session started."}
+  ```
+
+#### CLI Session Management (`riva session`)
+```bash
+# Start a new session and save to ~/.riva/session.id
+uv run riva session new
+
+# Inspect the active session ID
+uv run riva session id
+
+# List recent sessions along with turn count and last turn timestamp
+uv run riva session list
+uv run riva session list --limit 15
+```

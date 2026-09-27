@@ -203,6 +203,55 @@ async def show_model(request: dict[str, Any]) -> Any:
         raise HTTPException(status_code=502, detail=f"Failed to reach Ollama: {e}")
 
 
+_RESET_COMMAND_REGEX = re.compile(
+    r"^(?:/(?:new|reset|clear|new_session|session_new|start)|/session\s+new|(?:please\s+)?(?:start\s+a\s+)?new\s+session)(?:\s+(.*))?$",
+    re.IGNORECASE,
+)
+
+
+def get_current_session_id() -> str:
+    """Retrieve or initialize the active assistant session ID."""
+    session_file = config.DATA_DIR / "session.id"
+    if session_file.exists():
+        try:
+            sid = session_file.read_text().strip()
+            if sid:
+                return sid
+        except OSError:
+            pass
+    sid = str(uuid.uuid4())
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        session_file.write_text(sid)
+    except OSError:
+        pass
+    return sid
+
+
+def reset_session_id() -> str:
+    """Generate and persist a new active assistant session ID."""
+    sid = str(uuid.uuid4())
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        (config.DATA_DIR / "session.id").write_text(sid)
+    except OSError:
+        pass
+    return sid
+
+
+@app.post("/v1/session/new")
+async def start_new_session_endpoint() -> dict[str, str]:
+    """Start a new chat session and return the new session ID."""
+    sid = reset_session_id()
+    return {"status": "ok", "session_id": sid, "message": "✨ New chat session started."}
+
+
+@app.get("/v1/session")
+async def get_session_endpoint() -> dict[str, str]:
+    """Get the active chat session ID."""
+    return {"session_id": get_current_session_id()}
+
+
 @app.post("/v1/chat/completions")
 async def chat_completions(request: ChatCompletionRequest) -> Any:
     """Handle chat completion requests, supporting streaming, non-streaming, and assistant mode."""
@@ -237,7 +286,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
             user_query = msg.content
             break
 
-    session_id = request_id
+    session_id = get_current_session_id() if is_assistant_mode else request_id
     profile_store = None
     episodic_store = None
 
@@ -255,7 +304,76 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         else:
             messages_payload.insert(0, {"role": "system", "content": system_instruction})
 
-        # 2. Episodic Log & Explicit Directive Handling
+        # 2. Check for Session Reset / New Session commands (triggerable via Signal, CLI, or API)
+        reset_match = _RESET_COMMAND_REGEX.match(user_query.strip())
+        if reset_match:
+            session_id = reset_session_id()
+            tail = reset_match.group(1)
+            if tail:
+                tail = tail.strip()
+
+            if not tail:
+                reset_text = "✨ New chat session started. Previous conversation context has been cleared."
+                logger.info("Session reset command triggered via chat. New session_id=%s", session_id)
+                if stream:
+
+                    async def _reset_stream():
+                        role_chunk = Chunk(
+                            id=request_id,
+                            created=created_time,
+                            model=model,
+                            choices=[StreamChoice(delta=Delta(role="assistant"))],
+                        )
+                        role_dict = asdict(role_chunk)
+                        role_dict["choices"][0]["delta"] = {
+                            k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None
+                        }
+                        yield f"data: {json.dumps(role_dict, ensure_ascii=False)}\n\n"
+
+                        msg_chunk = Chunk(
+                            id=request_id,
+                            created=created_time,
+                            model=model,
+                            choices=[StreamChoice(delta=Delta(content=reset_text))],
+                        )
+                        msg_dict = asdict(msg_chunk)
+                        msg_dict["choices"][0]["delta"] = {
+                            k: v for k, v in msg_dict["choices"][0]["delta"].items() if v is not None
+                        }
+                        yield f"data: {json.dumps(msg_dict, ensure_ascii=False)}\n\n"
+
+                        done_chunk = Chunk(
+                            id=request_id,
+                            created=created_time,
+                            model=model,
+                            choices=[StreamChoice(index=0, finish_reason="stop")],
+                        )
+                        done_dict = asdict(done_chunk)
+                        done_dict["choices"][0]["delta"] = {
+                            k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None
+                        }
+                        yield f"data: {json.dumps(done_dict, ensure_ascii=False)}\n\n"
+                        yield "data: [DONE]\n\n"
+
+                    return StreamingResponse(_reset_stream(), media_type="text/event-stream")
+
+                return asdict(
+                    ChatCompletionResponse(
+                        id=request_id,
+                        created=created_time,
+                        model=model,
+                        choices=[Choice(message=AssistantMessage(content=reset_text))],
+                    )
+                )
+
+            # Tail query present: reset history payload to just system instruction and the fresh user query
+            messages_payload = [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": tail},
+            ]
+            user_query = tail
+
+        # 3. Episodic Log & Explicit Directive Handling
         if user_query:
             episodic_store.log_turn(session_id, "user", user_query)
             try:

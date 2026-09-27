@@ -205,6 +205,31 @@ uv run riva storage prune --turns-days 60 --pending-days 14
 uv run riva storage backup
 ```
 
+### 5. Chat Session Management (`riva session` & Signal)
+
+Riva isolates conversation turns by session ID. You can start a new session, inspect the current active session, or list past sessions from the CLI or directly via chat (e.g. over Signal).
+
+#### Via Signal / OpenClaw Chat:
+Send any of the following commands in your Signal chat with Riva:
+- `/clear` or `/new_session` or `/start` or `new session`: Starts a brand new session, rotates the active session ID, and clears context without querying the LLM.
+- `/new <your question>`: Starts a fresh session, clears previous turns, and answers your new question immediately.
+- `POST /v1/session/new`: REST endpoint on Riva Gateway (`http://localhost:8085/v1/session/new`) to programmatically start a new session.
+
+*(Note: OpenClaw internally consumes bare `/new` and `/reset`; using `/clear`, `/new_session`, or `/new <prompt>` delivers an explicit confirmation message back to Signal).*
+
+#### Via CLI:
+```bash
+# Start a fresh chat session and persist the new session ID
+uv run riva session new
+
+# Print the active session ID
+uv run riva session id
+
+# List past chat sessions and their turn counts
+uv run riva session list
+uv run riva session list --limit 10
+```
+
 ---
 
 ## Design Principles

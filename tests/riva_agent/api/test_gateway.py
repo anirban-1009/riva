@@ -227,3 +227,135 @@ async def test_show_model_non_ollama(client):
         mock_config.PROVIDER = "openai"
         response = await client.post("/api/show", json={"name": "test-model"})
         assert response.status_code == 501
+
+
+@pytest.mark.asyncio
+async def test_session_id_management(client, isolated_data_dir):
+    from riva_agent.api.gateway import get_current_session_id, reset_session_id
+
+    sid1 = get_current_session_id()
+    assert sid1
+    assert (isolated_data_dir / "session.id").read_text().strip() == sid1
+
+    # Calling again returns same
+    assert get_current_session_id() == sid1
+
+    # Reset gives new
+    sid2 = reset_session_id()
+    assert sid2 != sid1
+    assert get_current_session_id() == sid2
+
+    # GET /v1/session
+    res_get = await client.get("/v1/session")
+    assert res_get.status_code == 200
+    assert res_get.json()["session_id"] == sid2
+
+    # POST /v1/session/new
+    res_post = await client.post("/v1/session/new")
+    assert res_post.status_code == 200
+    data = res_post.json()
+    assert data["status"] == "ok"
+    assert data["session_id"] != sid2
+    assert get_current_session_id() == data["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_reset_command_bare(client, isolated_data_dir):
+    from riva_agent.api.gateway import get_current_session_id
+
+    initial_sid = get_current_session_id()
+
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_create.return_value = mock_provider
+
+        # Bare /clear command
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "/clear"}],
+            "stream": False,
+        }
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert "✨ New chat session started" in data["choices"][0]["message"]["content"]
+
+        # Provider should NOT be called for bare reset
+        mock_provider.chat_async.assert_not_called()
+
+        # Session ID must be rotated
+        new_sid = get_current_session_id()
+        assert new_sid != initial_sid
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_reset_command_bare_streaming(client, isolated_data_dir):
+    from riva_agent.api.gateway import get_current_session_id
+
+    initial_sid = get_current_session_id()
+
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "/new_session"}],
+            "stream": True,
+        }
+        async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+            assert response.status_code == 200
+            lines = [line async for line in response.aiter_lines() if line]
+
+            assert any("New chat session started" in line for line in lines)
+            assert any("[DONE]" in line for line in lines)
+
+        mock_provider.chat_stream.assert_not_called()
+        assert get_current_session_id() != initial_sid
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_reset_command_with_query(client, isolated_data_dir):
+    from riva_agent.api.gateway import get_current_session_id
+
+    initial_sid = get_current_session_id()
+
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "The capital of France is Paris."
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "Old question from past session"},
+                {"role": "assistant", "content": "Old answer"},
+                {"role": "user", "content": "/new What is the capital of France?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["choices"][0]["message"]["content"] == "The capital of France is Paris."
+
+        # Verify new session ID
+        new_sid = get_current_session_id()
+        assert new_sid != initial_sid
+
+        # Verify old turns were purged from provider call payload
+        call_args = mock_provider.chat_async.call_args[0][0]
+        assert len(call_args) == 2
+        assert call_args[0]["role"] == "system"
+        assert call_args[1]["role"] == "user"
+        assert call_args[1]["content"] == "What is the capital of France?"
+
+        # Verify episodic memory logged turn under the new session ID
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db")
+        turns = mem_store.get_recent_turns(new_sid)
+        assert len(turns) == 2
+        assert turns[0].role == "user"
+        assert turns[0].content == "What is the capital of France?"
+        assert turns[1].role == "assistant"

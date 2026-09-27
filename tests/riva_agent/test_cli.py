@@ -272,3 +272,58 @@ def test_cli_storage_backup(capsys):
     assert len(b_mem.get_recent_turns("s1")) == 1
     b_prof = ProfileStore(prof_backups[0])
     assert b_prof.get("backup_key") == "backup_val"
+
+
+def test_cli_session_commands(capsys):
+    parser = cli.build_parser()
+
+    # 1. No session exists yet
+    session_file = config.DATA_DIR / "session.id"
+    if session_file.exists():
+        session_file.unlink()
+
+    args = parser.parse_args(["session", "id"])
+    ret = args.func(args)
+    assert ret == 1
+    err = capsys.readouterr().err
+    assert "No active session ID found." in err
+
+    # 2. session list with no sessions in memory
+    args = parser.parse_args(["session", "list"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "No recorded chat sessions found." in out
+
+    # 3. session new
+    args = parser.parse_args(["session", "new"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Started new chat session:" in out
+    assert session_file.exists()
+    sid1 = session_file.read_text().strip()
+    assert sid1 in out
+
+    # 4. session id prints the active session
+    args = parser.parse_args(["session", "id"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert out.strip() == sid1
+
+    # 5. Populate episodic memory with some turns across sessions
+    mem_store = EpisodicStore(config.DATA_DIR / "memory.db")
+    mem_store.log_turn(sid1, "user", "Hello in session 1")
+    mem_store.log_turn(sid1, "assistant", "Hi there!")
+    mem_store.log_turn("sid-2", "user", "Question in session 2")
+
+    # 6. session list displays sessions
+    args = parser.parse_args(["session", "list", "--limit", "10"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Session ID" in out
+    assert sid1 in out
+    assert "sid-2" in out
+    assert "2" in out  # turn count for sid1
