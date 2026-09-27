@@ -1,3 +1,4 @@
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,14 +23,15 @@ def mock_spacy():
 
 @pytest.fixture
 def mock_laya():
-    with patch("laya_mlx.load", create=True) as mock_load:
+    with patch.dict("sys.modules", {"laya_mlx": MagicMock()}):
+        mock_laya_mod = sys.modules["laya_mlx"]
         mock_agent = MagicMock()
         # Mock predict to return a response with probabilities
         mock_agent.predict.return_value = {
             "answers": {"complexity": {"probabilities": {"none": 0.6, "low": 0.2, "high": 0.2}}}
         }
-        mock_load.return_value = mock_agent
-        yield mock_load
+        mock_laya_mod.load.return_value = mock_agent
+        yield mock_laya_mod.load
 
 
 def test_router_social_fast_path(mock_spacy, mock_laya):

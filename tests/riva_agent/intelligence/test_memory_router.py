@@ -73,7 +73,7 @@ def test_memory_router_config_integration(monkeypatch):
     assert r_default.agent is None
 
     # 2. Explicit enable_laya parameter overrides config
-    with patch("laya_mlx.load", create=True):
+    with patch.dict("sys.modules", {"laya_mlx": MagicMock()}):
         r_explicit_true = MemoryRouter(enable_laya=True)
         assert r_explicit_true.enable_laya is True
 
@@ -85,7 +85,7 @@ def test_memory_router_config_integration(monkeypatch):
     r1 = get_memory_router()
     assert r1.enable_laya is False
 
-    with patch("laya_mlx.load", create=True):
+    with patch.dict("sys.modules", {"laya_mlx": MagicMock()}):
         r2 = get_memory_router(enable_laya=True)
         assert r2.enable_laya is True
 
