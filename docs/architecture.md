@@ -149,6 +149,7 @@ To keep the platform extensible, every Genie must implement a unified `Plugin` i
 from typing import Protocol, Any, runtime_checkable
 from dataclasses import dataclass
 
+
 @dataclass
 class PluginContext:
     domain: str
@@ -156,11 +157,13 @@ class PluginContext:
     memories: list[dict[str, Any]]
     facts: list[str]
 
+
 @dataclass
 class Tool:
     name: str
     description: str
     parameters: dict[str, Any]
+
 
 @runtime_checkable
 class Plugin(Protocol):

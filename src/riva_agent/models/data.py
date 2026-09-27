@@ -28,9 +28,7 @@ class ChatMessage(BaseModel):
         """
         if isinstance(value, list):
             return "".join(
-                part.get("text", "")
-                for part in value
-                if isinstance(part, dict) and part.get("type") == "text"
+                part.get("text", "") for part in value if isinstance(part, dict) and part.get("type") == "text"
             )
         return value
 

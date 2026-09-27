@@ -1,5 +1,7 @@
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
+
 from common.llm.providers import OllamaProvider
+
 
 class LLMManager:
     """Manages LLM queries and interfaces across the platform."""

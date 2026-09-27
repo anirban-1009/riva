@@ -2,6 +2,7 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim
 
 ARG VERSION=0.0.0-dev
 LABEL org.opencontainers.image.version=$VERSION
+LABEL org.opencontainers.image.source="https://github.com/anirban-1009/riva"
 
 WORKDIR /app
 

@@ -1,7 +1,8 @@
-import time
 import re
+import time
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional
+
 import spacy
 
 from riva_agent import config
@@ -22,6 +23,7 @@ class MemoryRouter:
     This class handles high-recall triage to determine if a user's query
     contains durable personal information worth extracting into memory.
     """
+
     def __init__(
         self,
         spacy_model: str = "en_core_web_sm",
@@ -55,16 +57,20 @@ class MemoryRouter:
 
         # 3. Deterministic Linguistic Classifier (0 ms, 0 MB RAM)
         self.ephemeral_re = re.compile(
-            r"\b(today|tonight|right now|at the moment|just now|this (morning|afternoon|evening)|yesterday|tomorrow|for (lunch|breakfast|dinner|snack))\b|"
+            r"\b(today|tonight|right now|at the moment|just now|this "
+            r"(morning|afternoon|evening)|yesterday|tomorrow|for (lunch|breakfast|dinner|snack))\b|"
             r"\b(feeling\s+(a\s+bit\s+|so\s+|really\s+)?(tired|sleepy|sick|exhausted|hungry|thirsty|cold|warm|drowsy))\b|"
             r"\b(headache|migraine|stomach\s*ache|fever|cough)\b|"
-            r"\b(heading to|going to (bed|sleep|the gym|the store)|running errands|had a (sandwich|meal|snack|coffee|drink|beer|lunch))\b",
+            r"\b(heading to|going to (bed|sleep|the gym|the store)|running errands|"
+            r"had a (sandwich|meal|snack|coffee|drink|beer|lunch))\b",
             re.IGNORECASE,
         )
         self.durable_re = re.compile(
-            r"\b(work(ing)? (as|at|for)|employed (at|by)|job is|career in|profession is|am a (software engineer|developer|engineer|doctor|lawyer|designer|architect|nurse|manager))\b|"
+            r"\b(work(ing)? (as|at|for)|employed (at|by)|job is|career in|profession is|"
+            r"am a (software engineer|developer|engineer|doctor|lawyer|designer|architect|nurse|manager))\b|"
             r"\b(live in|living in|reside in|moved to|based in)\b|"
-            r"\bmy\s+(daughter|son|child|children|wife|husband|partner|fianc[ée]|mom|dad|mother|father|sister|brother|dog|cat|pet)\b|"
+            r"\bmy\s+(daughter|son|child|children|wife|husband|partner|fianc[ée]|mom|dad|"
+            r"mother|father|sister|brother|dog|cat|pet)\b|"
             r"\b(allergic to|allergy|asthma|diabetes|celiac|lactose|chronic)\b|"
             r"\b(favorite|prefer|native language)\b",
             re.IGNORECASE,
@@ -76,8 +82,10 @@ class MemoryRouter:
                 "type": "choice",
                 "instructions": (
                     "Determine what kind of information the speaker is sharing about themselves:\n"
-                    "- 'durable_profile': Permanent life facts (job, employer, home location, family members, pets, medical conditions, allergies, long-term habits/preferences).\n"
-                    "- 'momentary_state': Ephemeral actions (meals eaten today, current physical fatigue, immediate errands, temporary chores, acute headache)."
+                    "- 'durable_profile': Permanent life facts (job, employer, home location, "
+                    "family members, pets, medical conditions, allergies, long-term habits/preferences).\n"
+                    "- 'momentary_state': Ephemeral actions (meals eaten today, current physical "
+                    "fatigue, immediate errands, temporary chores, acute headache)."
                 ),
                 "criteria": ["durable_profile", "momentary_state"],
             }
@@ -86,6 +94,7 @@ class MemoryRouter:
         if self.enable_laya:
             try:
                 import laya_mlx as laya
+
                 self.agent = laya.load("aac6fef/laya-mlx", compile=True)
                 _ = self.agent.predict("I work at Apple", self.laya_schema)
             except Exception:
@@ -111,7 +120,9 @@ class MemoryRouter:
         # If it starts with question words/verbs (e.g. "Can you give me...", "How do I optimize...")
         # and ends with '?' OR doesn't start with a personal assertion, bypass immediately!
         if self.question_and_command_re.match(clean):
-            if clean.endswith("?") or not clean.lower().startswith(("i ", "my ", "we ", "our ")):
+            is_personal = clean.lower().startswith(("i ", "my ", "we ", "our "))
+            is_explicit = self.explicit_memory_re.match(clean)
+            if clean.endswith("?") or (not is_personal and not is_explicit):
                 return AgentMemoryEvent(
                     query=query,
                     should_extract_memory=False,
@@ -143,7 +154,9 @@ class MemoryRouter:
             p_momentary = probs.get("momentary_state", 0.0)
 
             # Calibrated decision: durable must win AND beat momentary by a positive margin
-            should_store = (choice == "durable_profile") and (p_durable > p_momentary) and (p_durable >= self.durable_threshold)
+            should_store = (
+                (choice == "durable_profile") and (p_durable > p_momentary) and (p_durable >= self.durable_threshold)
+            )
         else:
             is_ephemeral = bool(self.ephemeral_re.search(clean))
             is_durable = bool(self.durable_re.search(clean))
@@ -163,11 +176,7 @@ _memory_router: Optional[MemoryRouter] = None
 def get_memory_router(enable_laya: Optional[bool] = None) -> MemoryRouter:
     """Get or lazily initialize the singleton MemoryRouter instance."""
     global _memory_router
-    target_laya = (
-        bool(enable_laya)
-        if enable_laya is not None
-        else getattr(config, "MEMORY_ROUTER_LAYA_ENABLED", False)
-    )
+    target_laya = bool(enable_laya) if enable_laya is not None else getattr(config, "MEMORY_ROUTER_LAYA_ENABLED", False)
     if _memory_router is None or _memory_router.enable_laya != target_laya:
         _memory_router = MemoryRouter(enable_laya=target_laya)
     return _memory_router

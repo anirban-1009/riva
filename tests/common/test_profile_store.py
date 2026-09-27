@@ -1,4 +1,5 @@
 import pytest
+
 from common.profile.store import ProfileStore
 
 

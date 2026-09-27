@@ -76,11 +76,11 @@ To eliminate model sprawl and avoid memory exhaustion, Riva adopts a lean, tiere
 ```mermaid
 graph TD
     UserQuery[Incoming User Message] --> Tier0[Tier 0: Regex & Directives <br/> < 0.1 ms • 0 MB RAM]
-    
+
     Tier0 -->|Explicit Save / Forget| FastSave[Direct SQLite Commit]
     Tier0 -->|Direct Questions & Commands| DirectPass[Pass-Through / Direct Response]
     Tier0 -->|Declarative Candidate| Tier1[Tier 1: spaCy Syntactic Pre-Router <br/> ~1.5 ms • ~40 MB RAM]
-    
+
     Tier1 -->|Not 1st-person subject binding| DirectPass
     Tier1 -->|Valid 1st-person durable candidate| Tier2[Tier 2: Async Extraction via Primary LLM <br/> 0 MB extra RAM • Reuses mlx_lm.server]
 ```

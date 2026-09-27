@@ -44,4 +44,3 @@ memory_router_laya: false
 # Directory where local SQLite stores (profile.db, memory.db) reside.
 # Defaults to ~/.riva, or can be set via RIVA_DATA_DIR env var.
 # data_dir: ~/.riva
-

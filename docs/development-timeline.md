@@ -30,8 +30,8 @@ gantt
 ## Milestone Breakdown & Target Timelines
 
 ### Phase 1: Foundation & Gateway Hardening (M0)
-**Status**: **COMPLETED** (Verified via test suite & OpenClaw live testing)  
-**Estimated Duration**: ~3–4 Days  
+**Status**: **COMPLETED** (Verified via test suite & OpenClaw live testing)
+**Estimated Duration**: ~3–4 Days
 **Primary Focus**: Lock in streaming reliability, privacy constraints, and dual-mode routing.
 
 - **Dual-Mode Gateway Routing (§5 of Product Definition)**:
@@ -48,8 +48,8 @@ gantt
 ---
 
 ### Phase 2: The User Profile System (M1)
-**Status**: **COMPLETED** (Implemented in `common/profile/store.py` with 100% test coverage)  
-**Estimated Duration**: ~4–5 Days  
+**Status**: **COMPLETED** (Implemented in `common/profile/store.py` with 100% test coverage)
+**Estimated Duration**: ~4–5 Days
 **Primary Focus**: A persistent, structured model of the user that survives restarts.
 
 - **Local Storage Engine**:
@@ -69,8 +69,8 @@ gantt
 ---
 
 ### Phase 3: Episodic Memory & Syntactic Admission Router (M2)
-**Status**: **COMPLETED** (Implemented in `common/memory/store.py` & `src/riva_agent/intelligence/memory_router.py`)  
-**Estimated Duration**: ~6–7 Days  
+**Status**: **COMPLETED** (Implemented in `common/memory/store.py` & `src/riva_agent/intelligence/memory_router.py`)
+**Estimated Duration**: ~6–7 Days
 **Primary Focus**: Conversation recording, recency retrieval, and deterministic fact admission.
 
 - **Episodic Conversation Store & Retention Primitives**:
@@ -93,8 +93,8 @@ gantt
 ---
 
 ### Phase 4: Trust Surface, Storage Management & CLI — v1 Ship (M3)
-**Status**: **IN PROGRESS** (`riva` CLI shipped with `ask`, `profile`, `memory`; `riva storage` compaction/pruning and daemon log rotation remaining)  
-**Estimated Duration**: ~4–5 Days  
+**Status**: **IN PROGRESS** (`riva` CLI shipped with `ask`, `profile`, `memory`; `riva storage` compaction/pruning and daemon log rotation remaining)
+**Estimated Duration**: ~4–5 Days
 **Primary Focus**: User-facing trust, storage lifecycle management, and the primary personal interface.
 
 - **Terminal Interface (`riva ask`)**:
@@ -134,7 +134,7 @@ gantt
 ---
 
 ### Phase 5: Semantic Recall (M4 — Post-v1)
-**Estimated Duration**: ~6–7 Days  
+**Estimated Duration**: ~6–7 Days
 **Primary Focus**: Finding relevant facts across weeks/months beyond simple recency.
 
 - **Local Embeddings Only**:
@@ -150,7 +150,7 @@ gantt
 ---
 
 ### Phase 6: Proactive Local Digests (M5)
-**Estimated Duration**: ~4–5 Days  
+**Estimated Duration**: ~4–5 Days
 **Primary Focus**: Riva initiating value autonomously without waiting for a prompt.
 
 - **Local Scheduler**:
@@ -163,7 +163,7 @@ gantt
 ---
 
 ### Phase 7: First Capability Genie — Lighthouse Genie (M6)
-**Estimated Duration**: ~7–10 Days  
+**Estimated Duration**: ~7–10 Days
 **Primary Focus**: Building one real capability directly against the memory layer, then extracting the Plugin Protocol.
 
 - **Why Lighthouse First**:
@@ -187,4 +187,3 @@ gantt
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | Planned |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) | Planned |
 | **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) | Planned |
-
