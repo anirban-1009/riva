@@ -309,7 +309,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
             stream_generator(
                 provider,
                 messages_payload,
-                request.model if is_assistant_mode else model,
+                model,
                 request_id,
                 created_time,
                 temperature,
@@ -330,7 +330,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         response = ChatCompletionResponse(
             id=request_id,
             created=created_time,
-            model=request.model if is_assistant_mode else model,
+            model=model,
             choices=[Choice(message=AssistantMessage(content=content))],
         )
         return asdict(response)

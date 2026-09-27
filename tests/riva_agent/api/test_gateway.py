@@ -85,7 +85,8 @@ async def test_chat_completions_assistant_mode(client, isolated_data_dir):
         response = await client.post("/v1/chat/completions", json=payload)
         assert response.status_code == 200
         data = response.json()
-        assert data["model"] == "riva"
+        # In assistant mode, the response model should be the concrete backend model, not the virtual "riva" ID.
+        assert data["model"] != "riva"
         assert data["choices"][0]["message"]["content"] == "I know you live in Munich!"
 
         # Verify profile context was injected into the prompt

@@ -106,13 +106,28 @@ class ThinkingRouter:
         # -------------------------------------------------------------
         # Greetings & Casual Conversation
         if self.social_openers.match(clean) and len(clean.split()) <= 8:
-            return HybridDecision(
-                query=query,
-                requires_thinking=False,
-                effort_level=ReasoningEffort.NONE,
-                source="stage1_social_fast_path",
-                latency_ms=(time.perf_counter() - t_start) * 1000,
-            )
+            # If the query contains a complex keyword, don't fast-path it just because it starts with "Hello"
+            complex_keywords = {
+                "architecture",
+                "trade-off",
+                "tradeoff",
+                "quantum",
+                "entanglement",
+                "distributed",
+                "concurrency",
+                "optimize",
+                "optimization",
+            }
+            if any(k in clean.lower() for k in complex_keywords):
+                pass  # Fall through to deeper analysis
+            else:
+                return HybridDecision(
+                    query=query,
+                    requires_thinking=False,
+                    effort_level=ReasoningEffort.NONE,
+                    source="stage1_social_fast_path",
+                    latency_ms=(time.perf_counter() - t_start) * 1000,
+                )
 
         # Lookups, Formula Recalls, and Explanations
         if self.factoid_lookup_re.match(clean) or self.explanation_bypass_re.match(clean):
@@ -176,7 +191,7 @@ class ThinkingRouter:
         )
 
         # Combined HIGH reasoning trigger
-        if has_math_terms or (has_inequality_or_algebra and "solve" in lemmas) or has_word_problem:
+        if has_math_terms or has_inequality_or_algebra or has_word_problem:
             return HybridDecision(
                 query=query,
                 requires_thinking=True,

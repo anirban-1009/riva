@@ -120,7 +120,9 @@ class MemoryRouter:
         # If it starts with question words/verbs (e.g. "Can you give me...", "How do I optimize...")
         # and ends with '?' OR doesn't start with a personal assertion, bypass immediately!
         if self.question_and_command_re.match(clean):
-            if clean.endswith("?") or not clean.lower().startswith(("i ", "my ", "we ", "our ")):
+            is_personal = clean.lower().startswith(("i ", "my ", "we ", "our "))
+            is_explicit = self.explicit_memory_re.match(clean)
+            if clean.endswith("?") or (not is_personal and not is_explicit):
                 return AgentMemoryEvent(
                     query=query,
                     should_extract_memory=False,
