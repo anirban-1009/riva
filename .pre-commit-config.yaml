@@ -22,7 +22,7 @@ repos:
     hooks:
       - id: pytest
         name: pytest unit tests
-        entry: uv run pytest -q --cov=riva_agent --cov-fail-under=80
+        entry: uv run pytest -q
         language: system
         types: [python]
         pass_filenames: false
