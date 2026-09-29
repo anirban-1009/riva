@@ -37,6 +37,8 @@ depending on the base.
    - Never push commits or open the PR without the user's go-ahead first; drafting the description doesn't imply consent to publish it.
 
 4. **Draft the description**:
+   - **Format**: Return the entire output (Title and Body) inside a single markdown code block.
+   - **Style**: Do not use emojis.
    - **Title**: under 70 characters, describes the change not the mechanism ("Add X" not "Update files for X").
    - **Summary**: bullet points grouped by theme/subsystem, not one bullet per commit. Group related commits together even if they landed as separate commits.
    - **Notable fixes/bugs** (only if applicable): if the branch's history shows real bugs found and fixed along the way (not just planned feature work), call them out separately with enough detail that a reviewer understands the failure mode that was fixed, not just that "a bug was fixed."
