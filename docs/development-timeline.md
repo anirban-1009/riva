@@ -93,7 +93,7 @@ gantt
 ---
 
 ### Phase 4: Trust Surface, Storage Management & CLI — v1 Ship (M3)
-**Status**: **IN PROGRESS** (`riva` CLI shipped with `ask`, `profile`, `memory`; `riva storage` compaction/pruning and daemon log rotation remaining)
+**Status**: **COMPLETED** (`riva` CLI shipped with `ask`, `profile`, `memory`, `storage`, and `session` management $\rightarrow$ **v1 Shipped**)
 **Estimated Duration**: ~4–5 Days
 **Primary Focus**: User-facing trust, storage lifecycle management, and the primary personal interface.
 
@@ -183,7 +183,7 @@ gantt
 | **Phase 1** | **M0** | Gateway Hardening, SSE Contracts, Pass-through / Assistant Routing | Week 1 (Days 1–4) | **COMPLETED** |
 | **Phase 2** | **M1** | Persistent User Profile (SQLite + Prompt Injection) | Week 1–2 (Days 5–9) | **COMPLETED** |
 | **Phase 3** | **M2** | Episodic Memory & spaCy Syntactic Router | Week 2–3 (Days 10–16) | **COMPLETED** |
-| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **IN PROGRESS** |
+| **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **COMPLETED** |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | Planned |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) | Planned |
 | **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) | Planned |

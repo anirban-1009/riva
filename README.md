@@ -1,248 +1,285 @@
+<div align="center">
+
 # Riva Agent
 
-Riva Agent is an AI platform compatible with OpenClaw that manages and orchestrates various modular capabilities (Genie packages) within a `uv` workspace, while sharing common infrastructure through the `common` package.
+**Private, Persistent AI Assistant Running 100% Locally on Apple Silicon**
 
-## Documentation
+[![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)](https://www.python.org/downloads/)
+[![uv workspace](https://img.shields.io/badge/uv-workspace-purple.svg)](https://docs.astral.sh/uv/)
+[![Apple Silicon MLX](https://img.shields.io/badge/acceleration-Apple%20Silicon%20MLX-orange.svg)](https://github.com/ml-explore/mlx)
+[![Storage: SQLite WAL](https://img.shields.io/badge/storage-SQLite%20WAL-003B57.svg)](https://www.sqlite.org/)
+[![OpenClaw Compatible](https://img.shields.io/badge/channel-OpenClaw%20%2F%20Signal-green.svg)](https://github.com/openclaw/openclaw)
+[![Tests Passing](https://img.shields.io/badge/tests-66%20passed%20%7C%2082.6%25%20cov-brightgreen.svg)]()
+[![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)]()
 
-The **[wiki](https://github.com/anirban-1009/riva/wiki)** is the primary, canonical source for documentation — write/update docs there first. The `docs/` folder mirrors select wiki pages for in-repo reading:
-- **[Product Definition](docs/product-definition.md)**: Product statement, v1 scope, principles, and non-goals.
-- **[Development Timeline](docs/development-timeline.md)**: Phased roadmap and milestone schedule from foundation through v1 and post-v1.
-- **[Local Dev Runbook](docs/local-dev-runbook.md)**: Command reference for starting, health-checking, and recovering the local dev stack.
-- **[Architecture](docs/architecture.md)**: System design philosophy, layers, and core interfaces.
-- **[Inference Latency Investigation](docs/inference-latency.md)**: Root causes, benchmarks, and gateway configuration controls.
-- **[MLX Server Evaluation](docs/mlx-server-evaluation.md)**: Local model memory benchmarks and MLX serving evaluation.
+<br />
 
-## Repository Structure
+Riva is an on-device personal AI platform that remembers who you are across days, weeks, and conversations without leaking private data to cloud providers. Compatible with **Signal** (via OpenClaw), terminal workflows, and standard OpenAI-compatible frontends.
 
-```text
-riva-agent/
-├── common/
-├── job-genie/
-├── money-genie/
-├── workout-genie/
-├── lighthouse-genie/
-├── experiments/
-└── riva-agent/
-```
+[Quickstart](#quickstart) • [Architecture](#architecture) • [CLI & Signal Reference](#cli--signal-command-reference) • [Documentation](#documentation) • [Genie Packages](#genie-packages)
 
-### Packages
-
-| Package | Purpose |
-|---------|---------|
-| `riva-agent` | Main application responsible for orchestration and execution. |
-| `common` | Shared models, utilities, configuration, interfaces, and reusable components. |
-| `job-genie` | Career and job-search related capabilities. |
-| `money-genie` | Personal finance and budgeting capabilities. |
-| `workout-genie` | Health and workout related capabilities. |
-| `lighthouse-genie` | Planning, productivity, and guidance capabilities. |
-| `experiments` | Research, prototypes, benchmarks, and proof-of-concept implementations. |
+</div>
 
 ---
 
-## Workspace
+## Key Highlights
 
-This repository uses **uv Workspaces**.
+- **100% Local & Private**: All inference (Apple Silicon MLX / Ollama) and storage (local SQLite) remain on your machine. Zero telemetry, zero cloud embedding APIs, zero outbound data leaks.
+- **Persistent Dual Memory**:
+  - **Profile Store (`profile.db`)**: High-trust, deterministic key-value facts (location, dietary constraints, goals) injected directly into prompts.
+  - **Episodic Store (`memory.db`)**: Scoped conversation turns that survive daemon restarts with multi-session isolation.
+- **Syntactic Intent Pre-Routing**: In-memory spaCy dependency parsing (~1.6ms CPU) separates personal assertions (*"I use PostgreSQL"*) from imperative queries (*"Explain PostgreSQL to me"*), preventing memory contamination.
+- **Multi-Channel Presence**: Seamlessly interact through **Signal** on your phone (routed via OpenClaw), stream in the terminal via `riva ask`, or connect standard OpenAI-compatible web clients.
+- **Inspectable Human-in-the-Loop Trust**: Passive facts are **staged, not committed**. Review proposals with `riva memory list --pending`, accept or reject with one command, or permanently purge turns with `riva memory forget`.
+- **Local Storage Lifecycle**: Built-in `riva storage` suite for database vacuuming, WAL truncation, 30-day retention pruning, 7-day candidate expiry, copytruncate log rotation, and point-in-time disaster recovery snapshots.
 
-Each package is independently versioned and manages its own dependencies while sharing a single workspace lockfile.
+---
 
-Example dependency graph:
+## Architecture
 
-```text
-                riva-agent
-              /    |    |    \
-             /     |    |     \
-        job   money lighthouse workout
-            \    |      |      /
-             \   |      |     /
-                common
+Riva separates pass-through model execution from assistant mode via virtual model routing (`model="riva"`), ensuring everyday development prompts remain untouched while assistant conversations gain memory.
+
+```mermaid
+flowchart TD
+    subgraph Clients["Channels & Interfaces"]
+        Signal["Signal App"] --> OpenClaw["OpenClaw Gateway"]
+        OpenClaw --> Gateway
+        CLI["Riva CLI (riva ask / session)"] --> Gateway
+        ThirdParty["OpenAI-Compatible Clients"] --> Gateway
+    end
+
+    subgraph Core["Riva AI Gateway (:8085)"]
+        Gateway["FastAPI Gateway (/v1/chat/completions)"]
+        Router{"Model == 'riva'?"}
+        Gateway --> Router
+
+        Router -->|"Yes (Assistant Mode)"| Intel["Memory & Intent Pipeline"]
+        Router -->|"No (Pass-Through)"| Backend
+
+        Intel --> MemoryRouter["spaCy Syntactic Router (1.6ms)"]
+        Intel --> PromptAssembler["Context Fusion & Injection"]
+    end
+
+    subgraph Storage["Local SQLite Storage (~/.riva)"]
+        PromptAssembler <--> ProfileDB[("profile.db\n(Durable Facts & Preferences)")]
+        Intel <--> MemoryDB[("memory.db\n(Episodic Turns & Staged Facts)")]
+        Intel <--> SessionFile["session.id\n(Active Chat Session)"]
+    end
+
+    subgraph Backend["Local Inference (:8081 / :11434)"]
+        PromptAssembler --> MLX["MLX Server (e.g. Gemma 4)"]
+        PromptAssembler --> Ollama["Ollama Backend"]
+    end
 ```
 
 ---
 
-## Development
+## Quickstart
 
-### Sync Dependencies
+### 1. Prerequisites & Installation
 
-Install core platform dependencies (recommended, excludes heavy `experiments` notebooks and libraries):
+Riva uses [`uv`](https://docs.astral.sh/uv/) for high-performance dependency management and workspaces:
 
 ```bash
-# Sync core riva-agent, common, and genie packages (lean install)
+# Clone the repository
+git clone https://github.com/anirban-1009/riva.git
+cd riva
+
+# Sync core platform dependencies (excludes heavy ML research notebooks)
 uv sync
 ```
 
-Install all workspace dependencies (including `experiments` with Jupyter, PyTorch, Mem0, etc.):
+> [!TIP]
+> If you plan to run local evaluation notebooks in `experiments/`, run `uv sync --all-packages`.
+
+### 2. Start the Local Stack
+
+The stack management script automates launching the local MLX inference server and Riva AI Gateway:
 
 ```bash
-# Full workspace sync including prototyping notebooks
-uv sync --all-packages
-```
-
-### View Dependency Tree
-
-```bash
-# Core platform dependency tree (excluding experiments)
-uv tree --package riva-agent
-
-# Full workspace dependency tree
-uv tree --all-packages
-```
-
-### Local Dev Stack Automation
-
-Run the full local stack (MLX inference backend + Riva AI Gateway + OpenClaw check):
-
-```bash
-# Start all services (background)
+# Start MLX Inference Backend + Riva AI Gateway in the background
 ./scripts/start_stack.sh start
 
-# Start in Dev mode (foreground gateway with auto-reload on src/ & common/)
-./scripts/start_stack.sh dev
-
-# Check status of ports (8081, 8085) and services
+# Verify running services and health status
 ./scripts/start_stack.sh status
+```
 
-# Follow logs (~/.riva/logs/)
-./scripts/start_stack.sh logs
+### 3. Talk to Riva
 
-# Start stack and launch OpenClaw terminal chat
+You can query Riva directly in your terminal, chat over Signal, or run interactive sessions:
+
+```bash
+# Streaming conversation turn via terminal
+uv run riva ask "What do you know about my goals and dietary constraints?"
+
+# Launch an OpenClaw interactive terminal chat connected to Riva
 ./scripts/start_stack.sh chat
+```
 
-# Stop the stack
+To stop the stack at any time:
+```bash
 ./scripts/start_stack.sh stop
-```
-
-Run the main application manually:
-
-```bash
-uv run --package riva-agent uvicorn riva_agent.api.gateway:app --host 0.0.0.0 --port 8085
-```
-
-Run an individual package:
-
-```bash
-uv run --package job-genie python -m job_genie
 ```
 
 ---
 
-## CLI Usage Reference (`riva`)
+## CLI & Signal Command Reference
 
-The `riva` CLI is the primary trust and control surface for interacting with Riva in assistant mode, inspecting/steering persistent profiles and memory, and managing local storage lifecycle.
+The `riva` CLI is your trust and control surface for inspecting and modifying memory, managing storage hygiene, and rotating chat sessions.
 
-You can invoke commands via `uv run riva <subcommand>` or directly via `riva <subcommand>` when the environment is activated.
+### 1. Chat Sessions & Signal Commands
 
-### 1. Terminal Assistant (`riva ask`)
+Riva scopes conversation context to session IDs. You can trigger new sessions from your phone via Signal or from the CLI:
 
-Query Riva directly in Assistant Mode with streaming responses:
+| Channel | Command | Action |
+|---|---|---|
+| **Signal / OpenClaw** | `/clear`, `/new_session`, `/start`, `new session` | Instantly clears previous conversation context and starts a fresh session without invoking the LLM. |
+| **Signal / OpenClaw** | `/new <your question>` | Resets conversation context and answers your prompt immediately in the fresh session. |
+| **CLI** | `uv run riva session new` | Generates a new session UUID and persists it to `~/.riva/session.id`. |
+| **CLI** | `uv run riva session id` | Prints the active session ID. |
+| **CLI** | `uv run riva session list` | Lists recent conversation sessions, turn counts, and timestamps. |
+| **REST API** | `POST /v1/session/new` | Programmatically triggers session rotation. |
+
+### 2. Terminal Assistant (`riva ask`)
 
 ```bash
-# Query the assistant (requires the stack or gateway to be running on port 8085)
-uv run riva ask "What do you remember about my current location and dietary constraints?"
+# Query Riva in assistant mode with streaming response
+uv run riva ask "Can you summarize what we discussed about the architecture?"
 ```
 
-### 2. Profile Management (`riva profile`)
+### 3. Profile Management (`riva profile`)
 
-Inspect and modify durable user facts, preferences, constraints, and goals stored in `~/.riva/profile.db`:
+Inspect, set, and delete durable key-value facts stored in `~/.riva/profile.db`:
 
 ```bash
 # List all profile entries (or filter by category: facts, goals, constraints, preferences)
 uv run riva profile list
-uv run riva profile list --category facts
+uv run riva profile list --category constraints
 
-# Set or update a profile entry
-uv run riva profile set location "Munich" --category facts
-uv run riva profile set diet "Peanut allergy" --category constraints
-
-# Retrieve a specific profile key
+# Retrieve a specific entry
 uv run riva profile get location
 
-# Delete a profile key
+# Store or update a durable fact
+uv run riva profile set location "Munich" --category facts
+uv run riva profile set diet "No peanuts" --category constraints
+
+# Delete an entry
 uv run riva profile delete location
 ```
 
-### 3. Memory & Provenance (`riva memory`)
+### 4. Memory Inspection & Human-in-the-Loop Review (`riva memory`)
 
-Review recorded episodic conversation history, inspect staged candidate facts, and control memory retention in `~/.riva/memory.db`:
+Control episodic conversation history and staged candidate facts in `~/.riva/memory.db`:
 
 ```bash
 # List recent conversation turns across sessions
 uv run riva memory list
-uv run riva memory list --limit 25
+uv run riva memory list --limit 20
 
-# Inspect staged candidate memories pending human review
+# View candidate facts proposed by passive extraction awaiting review
 uv run riva memory list --pending
 
-# Accept a pending memory fact into the persistent profile
+# Accept a staged fact into your durable profile
 uv run riva memory accept <id>
 
-# Reject a pending candidate memory
+# Reject an unwanted candidate proposal
 uv run riva memory reject <id>
 
-# Permanently forget an episodic conversation turn
+# Permanently forget/delete an erroneous turn
 uv run riva memory forget <id>
 ```
 
-### 4. Storage Lifecycle & Hygiene (`riva storage`)
+### 5. Storage Hygiene, Compaction & Snapshots (`riva storage`)
 
-Maintain local disk efficiency, inspect table footprints, compact SQLite databases, prune old history, and manage backups:
+Keep SQLite storage lean, compact WAL logs, enforce log bounds, and snapshot databases:
 
 ```bash
-# Show storage telemetry for databases, WAL overhead, row counts, and logs footprint
+# Inspect storage telemetry: DB sizes, WAL overhead, row counts, and logs footprint
 uv run riva storage status
 
-# Compact databases and truncate active WAL checkpoints
+# Compact databases and truncate active WAL checkpoints to 0 bytes
 uv run riva storage vacuum
 
-# Preview turns and unreviewed pending memory deletions (dry run)
+# Dry-run retention pruning to preview what would be deleted
 uv run riva storage prune --dry-run
 
-# Prune old conversation turns (default: 30 days) and expired pending candidates (default: 7 days),
-# and automatically rotate logs exceeding 50MB (copytruncate, retaining 3 rotations)
+# Execute pruning (30-day turns, 7-day unreviewed candidates) & rotate logs > 50MB
 uv run riva storage prune
 uv run riva storage prune --turns-days 60 --pending-days 14
 
-# Create an online point-in-time snapshot backup of all databases in ~/.riva/backups/
+# Create an online point-in-time snapshot backup in ~/.riva/backups/
 uv run riva storage backup
 ```
 
-### 5. Chat Session Management (`riva session` & Signal)
+---
 
-Riva isolates conversation turns by session ID. You can start a new session, inspect the current active session, or list past sessions from the CLI or directly via chat (e.g. over Signal).
+## Genie Packages
 
-#### Via Signal / OpenClaw Chat:
-Send any of the following commands in your Signal chat with Riva:
-- `/clear` or `/new_session` or `/start` or `new session`: Starts a brand new session, rotates the active session ID, and clears context without querying the LLM.
-- `/new <your question>`: Starts a fresh session, clears previous turns, and answers your new question immediately.
-- `POST /v1/session/new`: REST endpoint on Riva Gateway (`http://localhost:8085/v1/session/new`) to programmatically start a new session.
+Riva is built as a modular `uv` workspace where domain-specific capabilities reside in isolated packages:
 
-*(Note: OpenClaw internally consumes bare `/new` and `/reset`; using `/clear`, `/new_session`, or `/new <prompt>` delivers an explicit confirmation message back to Signal).*
+```text
+riva/
+├── common/             # Shared SQLite models, memory stores, and utilities
+├── riva-agent/         # Gateway, CLI, intent routing, and reasoning engine
+├── job-genie/          # Career development, resume, and job search tooling
+├── money-genie/        # Personal finance and expense tracking capabilities
+├── workout-genie/      # Fitness tracking, routines, and health management
+├── lighthouse-genie/   # Planning, tech news, paper digests, and productivity
+└── experiments/        # Research benchmarks, Mem0 tests, and prototyping notebooks
+```
 
-#### Via CLI:
+| Package | Status | Responsibility |
+|---|---|---|
+| **`riva-agent`** | **Shipped (v1)** | Main orchestrator, OpenAI-compatible Gateway, session & intent routing. |
+| **`common`** | **Shipped (v1)** | Shared SQLite storage (`EpisodicStore`, `ProfileStore`), config, and models. |
+| **`lighthouse-genie`** | Planned (M6) | Autonomous daily digests, research paper triage, and reading lists. |
+| **`money-genie`** | Post-v1 | Private personal finance and budget assistant. |
+| **`workout-genie`** | Post-v1 | Workout scheduling and fitness tracking. |
+| **`job-genie`** | Post-v1 | Career management and portfolio assistance. |
+| **`experiments`** | Active | Empirical benchmarks (Mem0 latency, NLP routing, MLX context tests). |
+
+---
+
+## Documentation
+
+The canonical documentation is maintained in the [GitHub Wiki](https://github.com/anirban-1009/riva/wiki) and synchronized in the `docs/` folder:
+
+| Document | Description |
+|---|---|
+| **[Product Definition](docs/product-definition.md)** | Core principles, v1 acceptance criteria, memory admission policy, and roadmap. |
+| **[Development Timeline](docs/development-timeline.md)** | Milestone schedule from Foundation (M0) through Trust CLI (M3/v1) and Semantic Recall (M4). |
+| **[Local Dev Runbook](docs/local-dev-runbook.md)** | Service management, port mappings, disaster recovery, and operational procedures. |
+| **[Architecture](docs/architecture.md)** | System design, virtual model routing, plugin protocol, and data boundaries. |
+| **[Inference Latency Investigation](docs/inference-latency.md)** | Root causes of local model latency, thinking heuristics, and MLX benchmarks. |
+| **[Memory Store Evaluation](docs/memory-store-evaluation.md)** | Empirical benchmarks comparing SQLite, local Mem0, and hybrid routing. |
+| **[NLP Memory Routing Learnings](docs/nlp-memory-routing.md)** | Why dependency parsing outperforms embedding classification for memory gating. |
+
+---
+
+## Testing & Code Quality
+
+Riva enforces strict code quality and test coverage thresholds across the entire workspace:
+
 ```bash
-# Start a fresh chat session and persist the new session ID
-uv run riva session new
+# Run the complete test suite with coverage enforcement (>= 80%)
+uv run pytest
 
-# Print the active session ID
-uv run riva session id
-
-# List past chat sessions and their turn counts
-uv run riva session list
-uv run riva session list --limit 10
+# Run linter and formatting checks
+uv run ruff check common src tests
+uv run ruff format --check common src tests
 ```
 
 ---
 
-## Design Principles
+## Design Philosophy
 
-- Modular architecture
-- Shared code lives only in `common`
-- Domain logic stays inside individual packages
-- Independent dependency management
-- Simple package boundaries
-- Easy to extend with additional Genie packages
+1. **Zero Cloud Leaks**: If memory cannot be maintained on-device, it is not stored. No hosted vector databases or hosted embedding APIs.
+2. **Inspectability Before Autonomy**: A personal assistant must be inspectable by default. Users must be able to view, edit, or purge anything the assistant knows.
+3. **Deterministic Over Heuristic**: Core profile facts use deterministic key-value SQLite tables with `UPSERT` semantics rather than relying on noisy vector deduplication.
+4. **Lightweight & Single-User**: SQLite WAL files over server database processes; local Apple Silicon hardware over remote clusters.
 
 ---
 
-## Future Direction
-
-The long-term goal is for each Genie package to act as a plugin that can be dynamically discovered and loaded by the main `riva-agent` application, enabling new capabilities to be added with minimal changes to the orchestrator.
+<div align="center">
+Built for private, personal on-device intelligence.
+</div>
