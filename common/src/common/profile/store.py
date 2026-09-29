@@ -134,6 +134,38 @@ class ProfileStore:
 
         return "\n".join(lines)
 
+    def get_stats(self) -> dict:
+        """Return telemetry about the profile store."""
+        stats = {"file_size": 0, "wal_size": 0, "shm_size": 0, "rows": 0}
+        db_path = Path(self.db_path)
+        if db_path.exists():
+            stats["file_size"] = db_path.stat().st_size
+
+        wal_path = Path(f"{self.db_path}-wal")
+        shm_path = Path(f"{self.db_path}-shm")
+        if wal_path.exists():
+            stats["wal_size"] = wal_path.stat().st_size
+        if shm_path.exists():
+            stats["shm_size"] = shm_path.stat().st_size
+
+        with self._get_connection() as conn:
+            stats["rows"] = conn.execute("SELECT count(*) FROM profile").fetchone()[0]
+
+        return stats
+
+    def vacuum(self) -> None:
+        """Compact the database and truncate the WAL file."""
+        with self._get_connection() as conn:
+            conn.execute("VACUUM;")
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+
+    def backup(self, backup_path: Path | str) -> None:
+        """Create an online snapshot using VACUUM INTO."""
+        backup_path = Path(backup_path)
+        backup_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._get_connection() as conn:
+            conn.execute("VACUUM INTO ?;", (str(backup_path),))
+
 
 _profile_store: Optional[ProfileStore] = None
 

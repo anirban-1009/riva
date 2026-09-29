@@ -58,3 +58,28 @@ def test_format_context(store):
     assert "[User Profile & Durable Facts]" in ctx
     assert "- Location: Munich [facts]" in ctx
     assert "- Diet: Peanut allergy [constraints]" in ctx
+
+
+def test_profile_store_stats_vacuum_backup(store, tmp_path):
+    store.set("key1", "val1", category="facts")
+    store.set("key2", "val2", category="goals")
+
+    stats = store.get_stats()
+    assert stats["rows"] == 2
+    assert stats["file_size"] > 0
+    assert isinstance(stats["wal_size"], int)
+    assert isinstance(stats["shm_size"], int)
+
+    # Vacuum
+    store.vacuum()
+
+    # Backup
+    backup_file = tmp_path / "backup_prof.db"
+    store.backup(backup_file)
+    assert backup_file.exists()
+
+    # Verify backup DB content
+    backup_store = ProfileStore(backup_file)
+    assert backup_store.get("key1") == "val1"
+    assert backup_store.get("key2") == "val2"
+    assert len(backup_store.list_all()) == 2
