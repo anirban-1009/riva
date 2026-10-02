@@ -165,7 +165,13 @@ class OllamaProvider:
                 name = item.get("name")
                 if not name:
                     continue
-                caps: list[str] = [k for k, v in item.get("capabilities", {}).items() if v]
+                raw_caps = item.get("capabilities", [])
+                if isinstance(raw_caps, dict):
+                    caps: list[str] = [k for k, v in raw_caps.items() if v]
+                elif isinstance(raw_caps, list):
+                    caps: list[str] = [str(c) for c in raw_caps]
+                else:
+                    caps: list[str] = []
                 cache[name] = caps
                 if ":" in name:
                     cache[name.split(":")[0]] = caps

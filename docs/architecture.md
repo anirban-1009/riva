@@ -319,19 +319,28 @@ Workspace member packages (`common`, `job-genie`, `money-genie`, `workout-genie`
 `scripts/build.sh` cuts a full release in one step: bump version → regenerate changelog → commit → tag → build. Version bumping, changelog generation, the release commit, and the git tag are all delegated to [commitizen](https://commitizen-tools.github.io/commitizen/) (`cz`), run ephemerally via `uvx --from commitizen cz ...` so it isn't a project runtime dependency — an earlier version of this script hand-rolled all of that logic (bespoke `sed` version bumping, a `git log`-driven changelog), which duplicated a well-tested tool for no benefit and had its own portability bug (see below).
 
 ```bash
-./scripts/build.sh          # auto-detects bump from conventional-commit types
-./scripts/build.sh patch    # force a patch bump (0.1.0 -> 0.1.1)
-./scripts/build.sh minor    # force a minor bump (0.1.0 -> 0.2.0)
-./scripts/build.sh major    # force a major bump (0.1.0 -> 1.0.0)
+./scripts/build.sh                     # auto-detects bump from conventional-commit types
+./scripts/build.sh patch               # force a patch bump (0.1.0 -> 0.1.1)
+./scripts/build.sh minor               # force a minor bump (0.1.0 -> 0.2.0)
+./scripts/build.sh major               # force a major bump (0.1.0 -> 1.0.0)
+./scripts/build.sh --push              # bump and push to registry (default: ghcr.io/anirban-1009/riva-agent)
+./scripts/build.sh --build-only        # build image for current version without bump
+./scripts/build.sh --build-only --push # build current version and push
 ```
 
-1. **Refuses to run on a dirty working tree** (`git status --porcelain`) — the release commit should contain only the version bump and changelog, not whatever else happens to be lying around.
+1. **Refuses to run on a dirty working tree** (`git status --porcelain`), unless using `--build-only` — the release commit should contain only the version bump and changelog, not whatever else happens to be lying around.
 2. **`cz bump [--increment PATCH|MINOR|MAJOR] --changelog --yes`**: with no explicit increment, commitizen inspects commits since the last `vX.Y.Z` tag and picks the bump itself per conventional-commit semantics (`feat` → minor, `fix`/`refactor`/`perf` → patch, `BREAKING CHANGE`/`!` → major); an explicit `patch`/`minor`/`major` argument overrides that detection. It bumps `[project].version` in `pyproject.toml` directly (`version_provider = "pep621"` in `[tool.commitizen]`, so there's no separate commitizen-only version field to keep in sync), regenerates `CHANGELOG.md` grouped under `### Feat`/`### Fix`/`### Refactor`/`### Perf` headings (commits of other conventional types — `docs`, `chore`, `test`, `style`, `build`, `ci` — are intentionally treated as non-release-worthy and left out entirely, matching commitizen's own defaults), then commits (`bump: version X.Y.Z → X.Y.Z`) and tags (`vX.Y.Z`) in one step.
-3. **Builds and tags the image**, both the bumped version and a moving `latest`:
+3. **Builds and tags the image**, for both local development and the remote registry:
 
    ```bash
-   docker build --build-arg VERSION="$VERSION" -t "riva-agent:$VERSION" -t riva-agent:latest .
+   docker build --build-arg VERSION="$VERSION" \
+     -t "riva-agent:$VERSION" \
+     -t "riva-agent:latest" \
+     -t "${REGISTRY}:$VERSION" \
+     -t "${REGISTRY}:latest" .
    ```
+
+   When `--push` is passed, it executes `docker push` for `${REGISTRY}:$VERSION` and `${REGISTRY}:latest`. The target registry defaults to `ghcr.io/anirban-1009/riva-agent` and can be overridden via `REGISTRY=...`.
 
 `docker-compose.yml`'s image reference is env-driven: `image: riva-agent:${RIVA_TAG:-latest}`.
 
