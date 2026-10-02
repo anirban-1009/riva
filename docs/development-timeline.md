@@ -17,8 +17,8 @@ gantt
   M0 - Gateway Hardening & Guard              :done, m0, 2026-09-22, 4d
   M1 - Central Profile Store (SQLite)         :done, m1, after m0, 5d
   M2 - Episodic Memory & Router               :done, m2, after m1, 7d
-  M3 - Trust Surface, Storage & CLI           :active, m3, after m2, 5d
-  v1 Checkpoint & Privacy Check               :crit, v1_done, after m3, 2d
+  M3 - Trust Surface, Storage & CLI           :done, m3, after m2, 5d
+  v1 Checkpoint & Privacy Check               :done, crit, v1_done, after m3, 2d
   M4 - Semantic Recall (sqlite-vec)           :m4, after v1_done, 7d
   M5 - Proactive Digests (macOS)              :m5, after m4, 5d
   M6 - First Capability Genie                 :m6, after m5, 8d
