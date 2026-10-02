@@ -1,7 +1,7 @@
 [project]
 name = "riva-agent"
 version = "1.0.0"
-description = "Add your description here"
+description = "Private, persistent personal AI assistant that coordinates localized genies on-device"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [

@@ -172,7 +172,9 @@ async def stream_generator(
 @app.get("/v1/models")
 async def list_models() -> dict[str, Any]:
     """List available models from the configured backend in OpenAI-compatible format."""
-    provider = create_provider(config.PROVIDER, base_url=config.OPENAI_BASE_URL, api_key=config.OPENAI_API_KEY)
+    base_url = config.OPENAI_BASE_URL if config.PROVIDER.lower() == "openai" else config.OLLAMA_BASE_URL
+    api_key = config.OPENAI_API_KEY if config.PROVIDER.lower() == "openai" else None
+    provider = create_provider(config.PROVIDER, base_url=base_url, api_key=api_key)
     try:
         model_ids = await provider.list_models()
         if "riva" not in model_ids:
@@ -262,11 +264,13 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
     else:
         model = config.MODEL or request.model
 
+    base_url = config.OPENAI_BASE_URL if config.PROVIDER.lower() == "openai" else config.OLLAMA_BASE_URL
+    api_key = config.OPENAI_API_KEY if config.PROVIDER.lower() == "openai" else None
     provider = create_provider(
         config.PROVIDER,
         model=model,
-        base_url=config.OPENAI_BASE_URL,
-        api_key=config.OPENAI_API_KEY,
+        base_url=base_url,
+        api_key=api_key,
     )
 
     messages_payload = [{"role": msg.role, "content": msg.content} for msg in request.messages]
