@@ -19,7 +19,10 @@ _config = _load_config()
 # API — OpenAI itself, Groq, OpenRouter, a self-hosted vLLM/LM Studio server,
 # etc, configured below). Defaults to Ollama so existing local setups keep
 # working without a config change.
-PROVIDER: str = _config.get("provider", "ollama")
+PROVIDER: str = os.environ.get("RIVA_PROVIDER", os.environ.get("PROVIDER", _config.get("provider", "ollama")))
+
+_ollama_config: dict = _config.get("ollama") or {}
+OLLAMA_BASE_URL: str | None = os.environ.get("OLLAMA_BASE_URL", _ollama_config.get("base_url"))
 
 _openai_config: dict = _config.get("openai") or {}
 
@@ -27,12 +30,12 @@ _openai_config: dict = _config.get("openai") or {}
 # OPENAI_BASE_URL / OPENAI_API_KEY env vars (see
 # common/src/common/llm/providers.py), so secrets don't have to live in
 # config.yml if you'd rather keep them out of a file entirely.
-OPENAI_BASE_URL: str | None = _openai_config.get("base_url")
-OPENAI_API_KEY: str | None = _openai_config.get("api_key")
+OPENAI_BASE_URL: str | None = os.environ.get("OPENAI_BASE_URL", _openai_config.get("base_url"))
+OPENAI_API_KEY: str | None = os.environ.get("OPENAI_API_KEY", _openai_config.get("api_key"))
 
 # When set, every /v1/chat/completions request uses this model regardless of
 # what the client asks for.
-MODEL: str | None = _config.get("model")
+MODEL: str | None = os.environ.get("RIVA_MODEL", os.environ.get("MODEL", _config.get("model")))
 
 # Kill switch for the extended-thinking heuristic. False disables "think"
 # entirely regardless of prompt content or model capability; True (default)
