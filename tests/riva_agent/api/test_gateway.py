@@ -131,6 +131,109 @@ async def test_chat_completions_assistant_mode_explicit_directive(client, isolat
 
 
 @pytest.mark.asyncio
+async def test_chat_completions_assistant_mode_passive_candidate(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "Great company to work at!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "I work as a software engineer at Stripe"}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        # Verify fact was NOT committed directly to profile
+        prof_store = ProfileStore(isolated_data_dir / "profile.db")
+        assert len(prof_store.list_all(category="facts")) == 0
+
+        # Verify candidate fact was staged in pending_memories
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db")
+        pending = mem_store.list_pending()
+        assert len(pending) == 1
+        assert "software engineer" in pending[0].fact.lower()
+        assert pending[0].source_snippet == "I work as a software engineer at Stripe"
+
+        # Sending duplicate query should not create duplicate pending candidate
+        await client.post("/v1/chat/completions", json=payload)
+        assert len(mem_store.list_pending()) == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_assistant_mode_conversational_turn_replay(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "I heard you like coffee!"
+        mock_create.return_value = mock_provider
+
+        # Turn 1
+        p1 = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "I enjoy drinking black coffee in the morning"}],
+            "stream": False,
+        }
+        res1 = await client.post("/v1/chat/completions", json=p1)
+        assert res1.status_code == 200
+
+        # Turn 2: single-turn query (e.g. from `riva ask`)
+        mock_provider.chat_async.return_value = "You said you enjoy black coffee."
+        p2 = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "What beverage did I mention?"}],
+            "stream": False,
+        }
+        res2 = await client.post("/v1/chat/completions", json=p2)
+        assert res2.status_code == 200
+
+        # Inspect messages passed to provider on Turn 2
+        call_args = mock_provider.chat_async.call_args[0][0]
+        # Should contain: system prompt, Turn 1 user, Turn 1 assistant, Turn 2 user
+        assert len(call_args) == 4
+        assert call_args[0]["role"] == "system"
+        assert call_args[1]["role"] == "user"
+        assert "black coffee" in call_args[1]["content"]
+        assert call_args[2]["role"] == "assistant"
+        assert "like coffee" in call_args[2]["content"]
+        assert call_args[3]["role"] == "user"
+        assert call_args[3]["content"] == "What beverage did I mention?"
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_assistant_mode_multi_turn_payload_no_duplication(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "Understood."
+        mock_create.return_value = mock_provider
+
+        # Client manages its own history and sends multiple messages in payload
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "Client msg 1"},
+                {"role": "assistant", "content": "Client msg 2"},
+                {"role": "user", "content": "Client msg 3"},
+            ],
+            "stream": False,
+        }
+        res = await client.post("/v1/chat/completions", json=payload)
+        assert res.status_code == 200
+
+        call_args = mock_provider.chat_async.call_args[0][0]
+        # Should be system prompt + 3 client messages, exactly 4 messages total
+        assert len(call_args) == 4
+        assert call_args[0]["role"] == "system"
+        assert call_args[1]["content"] == "Client msg 1"
+        assert call_args[2]["content"] == "Client msg 2"
+        assert call_args[3]["content"] == "Client msg 3"
+
+
+@pytest.mark.asyncio
 async def test_chat_completions_passthrough_mode(client, isolated_data_dir):
     # Pass-through mode should NOT inject profile or log memory
     prof_store = ProfileStore(isolated_data_dir / "profile.db")

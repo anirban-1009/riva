@@ -2,11 +2,14 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 import uuid
 from datetime import datetime
 
 import httpx
+import yaml
 
 from common import get_episodic_store, get_profile_store
 from riva_agent import config
@@ -112,6 +115,68 @@ def cmd_profile_delete(args: argparse.Namespace) -> int:
         return 0
     print(f"Key '{args.key}' not found.", file=sys.stderr)
     return 1
+
+
+def cmd_profile_show(args: argparse.Namespace) -> int:
+    """Show formatted user profile context."""
+    store = get_profile_store(config.DATA_DIR / "profile.db")
+    ctx = store.format_context(max_entries=100)
+    if not ctx:
+        print("No profile entries found.")
+        return 0
+    print(ctx)
+    return 0
+
+
+def cmd_profile_edit(args: argparse.Namespace) -> int:
+    """Edit user profile in $EDITOR as YAML."""
+    store = get_profile_store(config.DATA_DIR / "profile.db")
+    entries = store.list_all()
+
+    data = [{"category": e.category, "key": e.key, "value": e.value} for e in entries]
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".yaml", delete=False) as tf:
+        yaml.safe_dump(data, tf, sort_keys=False, allow_unicode=True)
+        temp_path = tf.name
+
+    editor = os.environ.get("EDITOR") or ("nano" if shutil.which("nano") else "vi")
+    try:
+        ret = subprocess.call([editor, temp_path])
+        if ret != 0:
+            print("Editor exited with non-zero status. Profile edit aborted.", file=sys.stderr)
+            return 1
+
+        with open(temp_path, "r", encoding="utf-8") as tf:
+            content = tf.read().strip()
+            new_data = yaml.safe_load(content) if content else []
+
+        if new_data is None:
+            new_data = []
+
+        if not isinstance(new_data, list):
+            print("Invalid profile format. Expected a YAML list of entries.", file=sys.stderr)
+            return 1
+
+        existing_keys = {e.key for e in entries}
+        new_keys = set()
+        for item in new_data:
+            if not isinstance(item, dict) or "key" not in item or "value" not in item:
+                continue
+            k = str(item["key"]).strip()
+            v = str(item["value"]).strip()
+            cat = str(item.get("category", "general")).strip()
+            if k:
+                store.set(key=k, value=v, category=cat)
+                new_keys.add(k)
+
+        for removed_key in existing_keys - new_keys:
+            store.delete(removed_key)
+
+        print(f"✔ Profile synchronized ({len(new_keys)} entries active).")
+        return 0
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def cmd_memory_list(args: argparse.Namespace) -> int:
@@ -408,6 +473,12 @@ def build_parser() -> argparse.ArgumentParser:
     prof_del = profile_sub.add_parser("delete", help="Delete a profile entry")
     prof_del.add_argument("key", type=str, help="Profile key")
     prof_del.set_defaults(func=cmd_profile_delete)
+
+    prof_show = profile_sub.add_parser("show", help="Show formatted profile context")
+    prof_show.set_defaults(func=cmd_profile_show)
+
+    prof_edit = profile_sub.add_parser("edit", help="Edit profile in $EDITOR as YAML")
+    prof_edit.set_defaults(func=cmd_profile_edit)
 
     # riva memory ...
     memory_parser = subparsers.add_parser("memory", help="Inspect and manage episodic and candidate memories")
