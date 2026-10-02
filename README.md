@@ -143,15 +143,21 @@ Riva scopes conversation context to session IDs. You can trigger new sessions fr
 ### 2. Terminal Assistant (`riva ask`)
 
 ```bash
-# Query Riva in assistant mode with streaming response
+# Query Riva in assistant mode with streaming response (injects profile & recent session turns)
 uv run riva ask "Can you summarize what we discussed about the architecture?"
 ```
 
 ### 3. Profile Management (`riva profile`)
 
-Inspect, set, and delete durable key-value facts stored in `~/.riva/profile.db`:
+Inspect, edit, set, and delete durable key-value facts stored in `~/.riva/profile.db`:
 
 ```bash
+# Show formatted profile context injected into assistant prompts
+uv run riva profile show
+
+# Edit entire profile in your favorite editor ($EDITOR) as YAML
+uv run riva profile edit
+
 # List all profile entries (or filter by category: facts, goals, constraints, preferences)
 uv run riva profile list
 uv run riva profile list --category constraints

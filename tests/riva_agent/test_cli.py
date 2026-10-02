@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
@@ -51,6 +52,53 @@ def test_cli_profile_lifecycle(capsys):
     args = parser.parse_args(["profile", "delete", "location"])
     ret = args.func(args)
     assert ret == 1
+
+
+def test_cli_profile_show_and_edit(capsys):
+    parser = cli.build_parser()
+    prof_store = ProfileStore(config.DATA_DIR / "profile.db")
+
+    # 1. Show empty
+    args = parser.parse_args(["profile", "show"])
+    ret = args.func(args)
+    assert ret == 0
+    assert "No profile entries found." in capsys.readouterr().out
+
+    # 2. Show populated
+    prof_store.set("role", "Engineer", category="career")
+    args = parser.parse_args(["profile", "show"])
+    ret = args.func(args)
+    assert ret == 0
+    captured = capsys.readouterr().out
+    assert "[User Profile & Durable Facts]" in captured
+    assert "role: Engineer [career]" in captured
+
+    # 3. Edit profile via mocked editor
+    def fake_editor_success(cmd):
+        temp_file = cmd[1]
+        with open(temp_file, "r") as f:
+            data = yaml.safe_load(f)
+        data[0]["value"] = "Principal Engineer"
+        data.append({"category": "hobby", "key": "sports", "value": "Running"})
+        with open(temp_file, "w") as f:
+            yaml.safe_dump(data, f)
+        return 0
+
+    with patch("subprocess.call", side_effect=fake_editor_success):
+        args = parser.parse_args(["profile", "edit"])
+        ret = args.func(args)
+        assert ret == 0
+        assert "Profile synchronized (2 entries active)." in capsys.readouterr().out
+
+    assert prof_store.get("role") == "Principal Engineer"
+    assert prof_store.get("sports") == "Running"
+
+    # 4. Edit with failure status
+    with patch("subprocess.call", return_value=1):
+        args = parser.parse_args(["profile", "edit"])
+        ret = args.func(args)
+        assert ret == 1
+        assert "Profile edit aborted" in capsys.readouterr().err
 
 
 def test_cli_memory_lifecycle(capsys):

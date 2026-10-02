@@ -373,7 +373,16 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
             ]
             user_query = tail
 
-        # 3. Episodic Log & Explicit Directive Handling
+        # 2. Conversational Recency Replay (for single-turn requests such as `riva ask`)
+        non_system_req = [m for m in request.messages if m.role != "system"]
+        if len(non_system_req) <= 1 and episodic_store and not reset_match:
+            past_turns = episodic_store.get_recent_turns(session_id, limit=6)
+            if past_turns:
+                history_msgs = [{"role": t.role, "content": t.content} for t in past_turns]
+                current_non_system = [m for m in messages_payload if m["role"] != "system"]
+                messages_payload = [messages_payload[0]] + history_msgs + current_non_system
+
+        # 3. Episodic Log & Directive / Candidate Extraction
         if user_query:
             episodic_store.log_turn(session_id, "user", user_query)
             try:
@@ -388,6 +397,14 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
                     if clean_fact:
                         profile_store.set(clean_fact[:50], clean_fact, category="facts")
                         logger.info("Explicit memory saved to profile: %s", clean_fact)
+                elif mem_event.should_extract_memory:
+                    # Passive candidate memory detected (§6 of Product Definition)
+                    fact_candidate = user_query.strip()
+                    existing_profile = profile_store.get(fact_candidate[:50])
+                    pending_proposals = [p.fact for p in episodic_store.list_pending(status="pending")]
+                    if not existing_profile and fact_candidate not in pending_proposals:
+                        cand_id = episodic_store.add_pending(fact_candidate, user_query)
+                        logger.info("Passive memory candidate #%d staged for review: %s", cand_id, fact_candidate)
             except Exception as e:
                 logger.warning("Failed to evaluate memory route for query: %s", e)
 

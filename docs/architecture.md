@@ -77,16 +77,16 @@ The main `riva-agent` orchestrator remains intentionally "dumb" regarding domain
 
 ## 3. Memory and Profile — the Load-Bearing Layer
 
-Per [[Product Definition]] §3.2, memory and profile are the product; a Genie is a thing that reads and writes them in a domain-shaped way. Everything else in this document — the gateway, the plugin protocol — sits on top of this layer, which is why it's described first here despite being unbuilt.
+Per [[Product Definition]] §3.2, memory and profile are the product; a Genie is a thing that reads and writes them in a domain-shaped way. Everything else in this document — the gateway, the plugin protocol — sits on top of this layer.
 
-**Status: planned, not yet implemented.** Nothing under `common/memory/` or `common/profile/` exists in the repo yet.
+**Status: Implemented (v1).** Implemented under `common/src/common/memory/` and `common/src/common/profile/` as local SQLite databases with WAL mode.
 
 ### Centralized Memory (`common/memory/`)
 
-A centralized state store that plugins interact with instead of maintaining private databases or separate chat histories.
+A centralized SQLite state store (`~/.riva/memory.db`) that plugins and the assistant gateway interact with instead of maintaining private databases or separate chat histories.
 
-- **`episodic.py`**: Tracks chronological logs of interactions, conversations, and event timelines.
-- **`semantic.py`**: Knowledge store (e.g., vector database) containing factual associations and concepts. Deferred past v1 — see [[Product Definition]] §6, "Deliberately not in v1."
+- **`store.py` (`EpisodicStore`)**: Tracks chronological logs of interactions, conversations, recency-window prompt injection for assistant sessions, and staged candidate memories awaiting human review.
+- **Semantic Store**: Knowledge store containing dense vector embeddings and index structures. Deferred past v1 to M4 (using local `sqlite-vec` + local embeddings).
 
 ### Unified Profile (`common/profile/`)
 

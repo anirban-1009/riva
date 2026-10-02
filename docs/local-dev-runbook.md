@@ -186,9 +186,15 @@ uv run riva ask "What are my main goals for this quarter?"
 
 ### 2. User Profile Management (`riva profile`)
 
-Inspect, update, or prune persistent profile entries stored in `profile.db`:
+Inspect, edit, update, or prune persistent profile entries stored in `profile.db`:
 
 ```bash
+# Show formatted profile context injected into assistant prompts
+uv run riva profile show
+
+# Edit entire profile in your favorite editor ($EDITOR) as YAML
+uv run riva profile edit
+
 # List all profile entries
 uv run riva profile list
 
