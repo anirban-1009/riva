@@ -1,3 +1,23 @@
+## v1.0.0 (2026-10-02)
+
+### Feat
+
+- add passive memory candidate staging, conversational recency replay, and profile show/edit commands
+- add pr-description workflow to draft and open pull requests
+- introduce chat session management with CLI and API endpoints
+- add database telemetry, vacuum, backup, and prune capabilities with CLI support
+- add test-audit skill and update project dependencies
+
+### Fix
+
+- resolve gateway model ID issue and refine intelligence reasoning heuristics
+- resolve gateway model ID issue and refine intelligence reasoning heuristics
+- **lint**: pin ruff isort first-party packages and align pre-commit ruff version
+
+### Refactor
+
+- update gateway tests to use async httpx client fixture
+
 ## v0.2.1 (2026-09-24)
 
 ### Feat
