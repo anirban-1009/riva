@@ -1,3 +1,9 @@
+## v1.1.0 (2026-10-02)
+
+### Feat
+
+- add provider environment variable overrides, robust Ollama capability parsing, and build script registry options
+
 ## v1.0.0 (2026-10-02)
 
 ### Feat
