@@ -94,7 +94,7 @@ uv sync
 
 ### 2. Start the Local Stack
 
-The stack management script automates launching the local MLX inference server and Riva AI Gateway:
+The stack management script automates launching the local MLX inference server and Riva AI Gateway (validating Apple Silicon MLX support, auto-installing `mlx-lm` if missing, prompting for model selection if unconfigured, and handling first-run weights download):
 
 ```bash
 # Start MLX Inference Backend + Riva AI Gateway in the background
@@ -120,6 +120,9 @@ To stop the stack at any time:
 ```bash
 ./scripts/start_stack.sh stop
 ```
+
+> [!TIP]
+> For a guide on query types, persistent profile recall, and the assistant capabilities roadmap, see [docs/assistant-capabilities.md](docs/assistant-capabilities.md).
 
 ---
 

@@ -19,7 +19,9 @@ _config = _load_config()
 # API — OpenAI itself, Groq, OpenRouter, a self-hosted vLLM/LM Studio server,
 # etc, configured below). Defaults to Ollama so existing local setups keep
 # working without a config change.
-PROVIDER: str = os.environ.get("RIVA_PROVIDER", os.environ.get("PROVIDER", _config.get("provider", "ollama")))
+PROVIDER: str = (
+    os.environ.get("RIVA_PROVIDER") or os.environ.get("PROVIDER") or _config.get("provider", "ollama") or "ollama"
+).lower()
 
 _ollama_config: dict = _config.get("ollama") or {}
 OLLAMA_BASE_URL: str | None = os.environ.get("OLLAMA_BASE_URL", _ollama_config.get("base_url"))

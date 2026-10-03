@@ -1,3 +1,13 @@
+## v1.0.2 (2026-10-03)
+
+### Feat
+
+- add robust local MLX setup automation, model selection, and config validation to start stack script
+
+### Fix
+
+- update dependency versions in pyproject.toml
+
 ## v1.0.1 (2026-10-02)
 
 ### Feat
