@@ -11,11 +11,27 @@ WORKDIR /app
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
+    UV_HTTP_TIMEOUT=300 \
     PATH="/app/.venv/bin:$PATH"
 
+# Pre-cache third-party dependencies before copying full application source
+COPY pyproject.toml uv.lock ./
+COPY common/pyproject.toml common/
+COPY job-genie/pyproject.toml job-genie/
+COPY money-genie/pyproject.toml money-genie/
+COPY workout-genie/pyproject.toml workout-genie/
+COPY lighthouse-genie/pyproject.toml lighthouse-genie/
+COPY experiments/pyproject.toml experiments/
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-workspace
+
+# Copy full application source code
 COPY . .
 
-RUN uv sync --frozen --no-dev
+# Fast sync to install only local workspace members
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
 
 EXPOSE 8000
 
