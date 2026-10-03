@@ -121,6 +121,9 @@ To stop the stack at any time:
 ./scripts/start_stack.sh stop
 ```
 
+> [!TIP]
+> For a guide on query types, persistent profile recall, and the assistant capabilities roadmap, see [docs/assistant-capabilities.md](docs/assistant-capabilities.md).
+
 ---
 
 ## CLI & Signal Command Reference

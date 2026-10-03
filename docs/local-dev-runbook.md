@@ -196,6 +196,8 @@ Stream an end-to-end conversation turn through the assistant pipeline with profi
 uv run riva ask "What are my main goals for this quarter?"
 ```
 
+> For full examples of supported query categories, profile memory recall, and the architecture roadmap, see [`docs/assistant-capabilities.md`](assistant-capabilities.md).
+
 ### 2. User Profile Management (`riva profile`)
 
 Inspect, edit, update, or prune persistent profile entries stored in `profile.db`:
