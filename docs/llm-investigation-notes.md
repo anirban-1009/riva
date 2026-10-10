@@ -1,5 +1,7 @@
 # Today's LLM Memory Investigation — Notes
 
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/LLM-Investigation-Notes) — the wiki is the canonical source; update it first.
+
 A plain walkthrough of what we actually did today while chasing down why the
 laptop was struggling to run the local model, in the order we did it. See
 `docs/local-model-memory.md` for the formal write-up with full data; this is
