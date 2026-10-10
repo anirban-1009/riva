@@ -194,21 +194,17 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
         return 0
 
     # Fetch recent turns across sessions
-    with store._get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, session_id, role, content, created_at FROM turns ORDER BY id DESC LIMIT ?;",
-            (args.limit,),
-        ).fetchall()
+    turns = store.list_turns(limit=args.limit)
 
-    if not rows:
+    if not turns:
         print("No conversation history recorded.")
         return 0
 
     print(f"{'ID':<6} {'Role':<10} {'Turn Snippet':<50} {'Created'}")
     print(f"{'-' * 5:<6} {'-' * 9:<10} {'-' * 49:<50} {'-' * 20}")
-    for r in reversed(rows):
-        snippet = r["content"][:48].replace("\n", " ") + ("..." if len(r["content"]) > 48 else "")
-        print(f"{r['id']:<6} {r['role']:<10} {snippet:<50} {r['created_at']}")
+    for t in reversed(turns):
+        snippet = t.content[:48].replace("\n", " ") + ("..." if len(t.content) > 48 else "")
+        print(f"{t.id:<6} {t.role:<10} {snippet:<50} {t.created_at}")
     return 0
 
 
@@ -411,26 +407,16 @@ def cmd_session_id(args: argparse.Namespace) -> int:
 def cmd_session_list(args: argparse.Namespace) -> int:
     """List recent conversation sessions from episodic memory."""
     mem_store = get_episodic_store(config.DATA_DIR / "memory.db")
-    with mem_store._get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT session_id, count(*) as turn_count, max(created_at) as last_turn
-            FROM turns
-            GROUP BY session_id
-            ORDER BY last_turn DESC
-            LIMIT ?;
-            """,
-            (args.limit,),
-        ).fetchall()
+    sessions = mem_store.list_sessions(limit=args.limit)
 
-    if not rows:
+    if not sessions:
         print("No recorded chat sessions found.")
         return 0
 
     print(f"{'Session ID':<38} {'Turns':<8} {'Last Turn'}")
     print(f"{'-' * 38:<38} {'-' * 7:<8} {'-' * 20}")
-    for r in rows:
-        print(f"{r['session_id']:<38} {r['turn_count']:<8} {r['last_turn']}")
+    for s in sessions:
+        print(f"{s.session_id:<38} {s.turn_count:<8} {s.last_turn}")
     return 0
 
 

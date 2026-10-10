@@ -97,13 +97,12 @@ async def test_chat_completions_assistant_mode(client, isolated_data_dir):
 
         # Verify turn was logged in episodic store
         mem_store = EpisodicStore(isolated_data_dir / "memory.db")
-        with mem_store._get_connection() as conn:
-            turns = conn.execute("SELECT role, content FROM turns;").fetchall()
+        turns = mem_store.list_turns()
         assert len(turns) == 2
-        assert turns[0]["role"] == "user"
-        assert turns[0]["content"] == "Where do I live?"
-        assert turns[1]["role"] == "assistant"
-        assert turns[1]["content"] == "I know you live in Munich!"
+        assert turns[1].role == "user"
+        assert turns[1].content == "Where do I live?"
+        assert turns[0].role == "assistant"
+        assert turns[0].content == "I know you live in Munich!"
 
 
 @pytest.mark.asyncio
@@ -262,8 +261,7 @@ async def test_chat_completions_passthrough_mode(client, isolated_data_dir):
 
         # Verify NO turns logged in episodic memory
         mem_store = EpisodicStore(isolated_data_dir / "memory.db")
-        with mem_store._get_connection() as conn:
-            turns = conn.execute("SELECT * FROM turns;").fetchall()
+        turns = mem_store.list_turns()
         assert len(turns) == 0
 
 

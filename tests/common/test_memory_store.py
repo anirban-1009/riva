@@ -122,3 +122,125 @@ def test_episodic_store_prune(mem_store):
     assert turns[0].content == "new turn"
     pending = mem_store.list_pending("pending")
     assert pending[0].fact == "new fact"
+
+
+def test_vector_store_operations(tmp_path):
+    db_file = tmp_path / "vec_memory.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+
+    t1 = store.log_turn("session-a", "user", "I love SQLite database engines.")
+    t2 = store.log_turn("session-a", "assistant", "SQLite is an embedded database engine.")
+    t3 = store.log_turn("session-b", "user", "Making vegetarian pasta for dinner.")
+
+    # Check unindexed turns before embedding
+    unindexed = store.get_unindexed_turns()
+    assert len(unindexed) == 3
+
+    # Add embeddings (4-dimensional test vectors)
+    vec1 = [1.0, 0.0, 0.0, 0.0]
+    vec2 = [0.9, 0.1, 0.0, 0.0]
+    vec3 = [0.0, 0.0, 1.0, 0.0]
+
+    store.add_embedding(t1, vec1, "session-a", "I love SQLite database engines.")
+    store.add_embedding(t2, vec2, "session-a", "SQLite is an embedded database engine.")
+    store.add_embedding(t3, vec3, "session-b", "Making vegetarian pasta for dinner.")
+
+    assert store.has_embedding(t1) is True
+    assert store.has_embedding(t2) is True
+    assert store.has_embedding(t3) is True
+    assert store.has_embedding(999) is False
+
+    assert len(store.get_unindexed_turns()) == 0
+
+    stats = store.get_stats()
+    assert stats["embeddings"] == 3
+    assert stats["embedding_dim"] == 4
+    assert stats["vec_enabled"] is True
+
+    # Search similar to vec1
+    query_vec = [0.95, 0.05, 0.0, 0.0]
+    matches = store.search_similar(query_vec, top_k=2, distance_threshold=0.5)
+    assert len(matches) == 2
+    assert matches[0].turn_id == t1
+    assert matches[0].distance < 0.05
+    assert matches[0].content == "I love SQLite database engines."
+    assert matches[1].turn_id == t2
+
+    # Search with session exclusion (exclude session-a)
+    matches_filtered = store.search_similar(query_vec, top_k=5, distance_threshold=2.0, exclude_session_id="session-a")
+    assert len(matches_filtered) == 1
+    assert matches_filtered[0].turn_id == t3
+    assert matches_filtered[0].session_id == "session-b"
+
+    # Search with strict distance threshold
+    strict_matches = store.search_similar(query_vec, top_k=5, distance_threshold=0.001)
+    assert len(strict_matches) <= 1
+
+    # Update existing embedding (re-embed t1)
+    new_vec1 = [0.8, 0.2, 0.0, 0.0]
+    store.add_embedding(t1, new_vec1, "session-a", "updated text")
+    assert store.get_stats()["embeddings"] == 3
+
+    # Delete single embedding
+    assert store.delete_embedding(t2) is True
+    assert store.has_embedding(t2) is False
+    assert store.get_stats()["embeddings"] == 2
+    # But turn itself still exists
+    assert store.get_turn(t2) is not None
+
+    # Delete turn cascades to remove embedding
+    assert store.delete_turn(t1) is True
+    assert store.has_embedding(t1) is False
+    assert store.get_stats()["embeddings"] == 1
+
+
+def test_vector_dimension_mismatch(tmp_path):
+    db_file = tmp_path / "vec_dim.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+    t1 = store.log_turn("sess", "user", "Hello")
+
+    with pytest.raises(ValueError, match="Vector dimension 3 does not match store dimension 4"):
+        store.add_embedding(t1, [1.0, 2.0, 3.0], "sess")
+
+    with pytest.raises(ValueError, match="Query vector dimension 2 does not match store dimension 4"):
+        store.search_similar([1.0, 2.0])
+
+
+def test_list_turns_and_sessions(tmp_path):
+    db_file = tmp_path / "list_test.db"
+    store = EpisodicStore(db_file)
+
+    store.log_turn("sess-1", "user", "turn 1")
+    store.log_turn("sess-1", "assistant", "turn 2")
+    store.log_turn("sess-2", "user", "turn 3")
+
+    turns = store.list_turns(limit=2)
+    assert len(turns) == 2
+    # Reverse chronological order
+    assert turns[0].content == "turn 3"
+    assert turns[1].content == "turn 2"
+
+    sessions = store.list_sessions(limit=10)
+    assert len(sessions) == 2
+    sess_map = {s.session_id: s for s in sessions}
+    assert sess_map["sess-1"].turn_count == 2
+    assert sess_map["sess-2"].turn_count == 1
+
+
+def test_sql_trigger_cascade(tmp_path):
+    db_file = tmp_path / "trigger_test.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+
+    t1 = store.log_turn("session-x", "user", "important fact")
+    store.add_embedding(t1, [1.0, 0.0, 0.0, 0.0], "session-x", "important fact")
+
+    assert store.has_embedding(t1) is True
+
+    # Delete turn directly via store.delete_turn
+    assert store.delete_turn(t1) is True
+
+    # Verify SQL trigger cascaded deletion to turn_embeddings and vec_turns
+    assert store.has_embedding(t1) is False
+    with store._get_connection() as conn:
+        assert conn.execute("SELECT count(*) FROM turn_embeddings WHERE turn_id = ?;", (t1,)).fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM vec_turns WHERE turn_id = ?;", (t1,)).fetchone()[0] == 0
