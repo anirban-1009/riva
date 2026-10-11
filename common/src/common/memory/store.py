@@ -2,9 +2,10 @@ import hashlib
 import logging
 import os
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Generator, Optional
 
 try:
     import sqlite_vec
@@ -127,7 +128,26 @@ class EpisodicStore:
         self._vec_enabled = False
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        if self.db_path == ":memory:":
+            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
+                self._mem_conn = sqlite3.connect(":memory:")
+                self._mem_conn.row_factory = sqlite3.Row
+                self._mem_conn.create_function("should_index_turn", 1, should_index_turn)
+                if sqlite_vec is not None:
+                    try:
+                        self._mem_conn.enable_load_extension(True)
+                        sqlite_vec.load(self._mem_conn)
+                        self._mem_conn.enable_load_extension(False)
+                        self._vec_enabled = True
+                    except Exception as e:
+                        logger.warning("Could not load sqlite-vec extension: %s", e)
+                        self._vec_enabled = False
+            with self._mem_conn:
+                yield self._mem_conn
+            return
+
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.create_function("should_index_turn", 1, should_index_turn)
@@ -147,7 +167,20 @@ class EpisodicStore:
         else:
             self._vec_enabled = False
 
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Close persistent in-memory database connection if allocated."""
+        if hasattr(self, "_mem_conn") and self._mem_conn is not None:
+            try:
+                self._mem_conn.close()
+            except Exception:
+                pass
+            self._mem_conn = None
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:

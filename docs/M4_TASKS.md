@@ -1,12 +1,13 @@
 # Milestone 4 (M4) — Semantic Recall: Task List
 
-**Project Status**: 🟢 In Progress (Phase 5 Completed; Proceeding to Phase 6)
+**Project Status**: 🟢 Milestone 4 Completed
 - [x] Local embedding provider implemented (`common/llm/embeddings.py`)
 - [x] Basic embedding tests created (`tests/common/test_embeddings.py`)
 - [x] Vector store integration (`sqlite-vec` in `common/memory/store.py`)
 - [x] Asynchronous ingestion & lifecycle management (`gateway.py`, `cli.py`, `store.py`)
 - [x] Hybrid context assembly & prompt injection (`gateway.py`, `store.py`)
 - [x] Trust surface & CLI tooling (`cli.py`, `store.py`)
+- [x] Evaluation & benchmarking suite (`scripts/benchmark_retrieval.py`, `tests/riva_agent/test_evaluation.py`)
 
 ## Core Objectives
 Enable cross-session semantic search to retrieve past facts and discussions relevant to the current prompt using strictly on-device embeddings and embedded vector search.
@@ -92,11 +93,11 @@ Enable cross-session semantic search to retrieve past facts and discussions rele
     - Implement `riva memory forget-turn <turn_id>`.
 
 ### Phase 6: Evaluation & Benchmarking Suite
-- [ ] **6.1 Latency Benchmark**
+- [x] **6.1 Latency Benchmark**
     - Verify retrieval phase executes in $< 40\text{ms}$ locally.
-- [ ] **6.2 Semantic Recall Test Suite**
+- [x] **6.2 Semantic Recall Test Suite**
     - Create pytest cases for conceptual queries with zero token overlap.
-- [ ] **6.3 Memory & VRAM Profiling**
+- [x] **6.3 Memory & VRAM Profiling**
     - Confirm embedding execution fits within 18GB unified memory budget.
 
 ---
