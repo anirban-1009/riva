@@ -648,3 +648,12 @@ async def test_synthetic_context_does_not_break_recency_replay(client, isolated_
         call_args = mock_provider.chat_async.call_args[0][0]
         call_contents = [m["content"] for m in call_args]
         assert any("My favorite color is green." in c for c in call_contents)
+
+
+@pytest.mark.asyncio
+async def test_gateway_lifespan():
+    from riva_agent.api.gateway import app, lifespan
+
+    with patch("riva_agent.api.gateway.get_thinking_router") as mock_tr:
+        async with lifespan(app):
+            mock_tr.assert_called_once()
