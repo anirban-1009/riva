@@ -3,10 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from common.llm.embeddings import MockEmbeddingProvider
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
 from riva_agent import config
-from riva_agent.api.gateway import app
+from riva_agent.api.gateway import app, set_embedding_provider
 
 
 @pytest.fixture
@@ -21,7 +22,10 @@ def isolated_data_dir(tmp_path, monkeypatch):
     data_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "DATA_DIR", data_dir)
     monkeypatch.setattr(config, "MODEL", None)
-    return data_dir
+    mock_emb = MockEmbeddingProvider(dimension=768)
+    set_embedding_provider(mock_emb)
+    yield data_dir
+    set_embedding_provider(None)
 
 
 @pytest.mark.asyncio
@@ -460,3 +464,187 @@ async def test_chat_completions_reset_command_with_query(client, isolated_data_d
         assert turns[0].role == "user"
         assert turns[0].content == "What is the capital of France?"
         assert turns[1].role == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_background_vector_indexing_on_turn(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "That is a powerful computer for running local models!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "My computer has 64GB unified memory and Apple M3 Max."}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        # Wait briefly for background task to complete
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        stats = mem_store.get_stats()
+        # Both user query and assistant response are substantive (> 15 chars) and should be vector embedded
+        assert stats["turns"] == 2
+        assert stats["embeddings"] == 2
+
+
+@pytest.mark.asyncio
+async def test_background_vector_indexing_boilerplate_filtering(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "thank you"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "ok sounds good"}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        stats = mem_store.get_stats()
+        # Turns are recorded in SQLite history, but skipped for vector embeddings due to low semantic signal
+        assert stats["turns"] == 2
+        assert stats["embeddings"] == 0
+
+
+@pytest.mark.asyncio
+async def test_synthetic_context_not_logged_as_episodic_turn(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "I am ready to help."
+        mock_create.return_value = mock_provider
+
+        openclaw_msg = (
+            "OpenClaw runtime context for the immediately preceding user message.\n"
+            "This context is runtime-generated, not user-authored. Keep internal details private.\n"
+            "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+            '{"chat_id": "123", "inbound_event_kind": "user_request"}\n'
+            "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+        )
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is the capital of Japan?"},
+                {"role": "assistant", "content": "The capital of Japan is Tokyo."},
+                {"role": "user", "content": openclaw_msg},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        turns = mem_store.list_turns(limit=10)
+        # Verify the synthetic OpenClaw turn was NOT recorded as a user turn
+        for t in turns:
+            assert "OPENCLAW_INTERNAL_CONTEXT" not in t.content
+            assert "OpenClaw runtime context" not in t.content
+
+
+def test_strip_thinking_tags():
+    from riva_agent.api.gateway import strip_thinking_tags
+
+    assert strip_thinking_tags("Normal text without tags") == "Normal text without tags"
+    assert strip_thinking_tags("<think>internal reasoning</think>Final response") == "Final response"
+    multiline = "<think>\nThinking step 1...\nThinking step 2...\n</think>\n\nHere is the clean answer."
+    assert strip_thinking_tags(multiline) == "Here is the clean answer."
+    assert strip_thinking_tags("<think>only thinking</think>") == ""
+
+
+@pytest.mark.asyncio
+async def test_assistant_turn_strips_thinking_tags(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = (
+            "<think>\nLet me deliberate on this question.\n</think>\nTokyo is the capital of Japan."
+        )
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is the capital of Japan?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        turns = mem_store.list_turns(limit=10)
+        asst_turns = [t for t in turns if t.role == "assistant"]
+        assert len(asst_turns) == 1
+        assert "<think>" not in asst_turns[0].content
+        assert "</think>" not in asst_turns[0].content
+        assert asst_turns[0].content == "Tokyo is the capital of Japan."
+
+
+@pytest.mark.asyncio
+async def test_synthetic_context_does_not_break_recency_replay(client, isolated_data_dir):
+    mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+    session_file = isolated_data_dir / "session.id"
+    session_id = session_file.read_text().strip() if session_file.exists() else "test-session"
+    session_file.write_text(session_id)
+
+    # Seed past turns into episodic history
+    mem_store.log_turn(session_id, "user", "My favorite color is green.")
+    mem_store.log_turn(session_id, "assistant", "Noted, your favorite color is green.")
+
+    openclaw_env = (
+        "OpenClaw runtime context for the immediately preceding user message.\n"
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+        '{"chat_id": "456"}\n'
+        "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+    )
+
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "Your favorite color is green!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": openclaw_env},
+                {"role": "user", "content": "What is my favorite color?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        # Verify chat_async was called with past turns replayed in messages_payload
+        call_args = mock_provider.chat_async.call_args[0][0]
+        call_contents = [m["content"] for m in call_args]
+        assert any("My favorite color is green." in c for c in call_contents)

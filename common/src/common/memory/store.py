@@ -49,6 +49,55 @@ class SessionSummary:
     last_turn: str
 
 
+def is_synthetic_context(content: str) -> bool:
+    """Check if message content is runtime/synthetic client metadata rather than user-authored text."""
+    text = content.strip()
+    return (
+        "OPENCLAW_INTERNAL_CONTEXT" in text
+        or "OpenClaw runtime context" in text
+        or "runtime-generated, not user-authored" in text
+        or text.startswith("<<<BEGIN_")
+    )
+
+
+def should_index_turn(content: str) -> bool:
+    """Determine whether a turn has sufficient semantic signal to be vector indexed.
+
+    Filters out:
+    - Empty or very short turns (< 15 characters, e.g. "ok", "thanks", "yes", "hello").
+    - Synthetic client / transport runtime context envelopes (e.g. OpenClaw metadata).
+    - Common boilerplate conversational filler or confirmations.
+    """
+    text = content.strip()
+    if len(text) < 15:
+        return False
+
+    if is_synthetic_context(text):
+        return False
+
+    normalized = text.lower().rstrip(".!?,")
+    low_signal_filler = {
+        "thank you very much",
+        "thanks a lot",
+        "thanks for the help",
+        "ok sounds good",
+        "sounds good to me",
+        "good morning to you",
+        "have a great day",
+        "have a nice day",
+        "i appreciate it",
+        "no problem at all",
+        "you are welcome",
+        "you're welcome",
+        "see you later",
+        "bye for now",
+    }
+    if normalized in low_signal_filler:
+        return False
+
+    return True
+
+
 class EpisodicStore:
     """Local SQLite-backed episodic store for conversation turns, staged candidate memories, and vector recall."""
 
@@ -69,6 +118,7 @@ class EpisodicStore:
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
+        conn.create_function("should_index_turn", 1, should_index_turn)
         if self.db_path != ":memory:":
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.execute("PRAGMA foreign_keys=ON;")
@@ -148,10 +198,13 @@ class EpisodicStore:
 
     def log_turn(self, session_id: str, role: str, content: str) -> int:
         """Log a conversation turn to episodic history. Returns the new turn ID."""
+        clean_content = content.strip()
+        if not clean_content or is_synthetic_context(clean_content):
+            return 0
         with self._get_connection() as conn:
             cur = conn.execute(
                 "INSERT INTO turns (session_id, role, content) VALUES (?, ?, ?);",
-                (session_id.strip(), role.strip(), content.strip()),
+                (session_id.strip(), role.strip(), clean_content),
             )
             conn.commit()
             return cur.lastrowid or 0
@@ -263,6 +316,8 @@ class EpisodicStore:
         """Store or update vector embedding for a conversation turn."""
         if not self._vec_enabled or sqlite_vec is None:
             raise RuntimeError("sqlite-vec is not enabled or available")
+        if content and is_synthetic_context(content):
+            return
         if len(vector) != self.embedding_dim:
             raise ValueError(f"Vector dimension {len(vector)} does not match store dimension {self.embedding_dim}")
 
@@ -343,6 +398,18 @@ class EpisodicStore:
             conn.commit()
             return cur.rowcount > 0
 
+    def clear_embeddings(self) -> int:
+        """Purge all vector embeddings and metadata from the episodic store."""
+        with self._get_connection() as conn:
+            if self._vec_enabled:
+                try:
+                    conn.execute("DELETE FROM vec_turns;")
+                except Exception as e:
+                    logger.debug("Failed deleting all from vec_turns: %s", e)
+            cur = conn.execute("DELETE FROM turn_embeddings;")
+            conn.commit()
+            return cur.rowcount
+
     def has_embedding(self, turn_id: int) -> bool:
         """Check if a turn currently has a vector embedding."""
         with self._get_connection() as conn:
@@ -357,7 +424,7 @@ class EpisodicStore:
                 SELECT t.id, t.session_id, t.role, t.content, t.created_at
                 FROM turns t
                 LEFT JOIN turn_embeddings e ON t.id = e.turn_id
-                WHERE e.turn_id IS NULL
+                WHERE e.turn_id IS NULL AND should_index_turn(t.content)
                 ORDER BY t.id ASC
                 LIMIT ?;
                 """,
@@ -376,10 +443,14 @@ class EpisodicStore:
 
     def add_pending(self, fact: str, source_snippet: str) -> int:
         """Stage a proposed candidate memory fact for human review. Returns the pending record ID."""
+        clean_fact = fact.strip()
+        clean_source = source_snippet.strip()
+        if not clean_fact or is_synthetic_context(clean_fact) or is_synthetic_context(clean_source):
+            return 0
         with self._get_connection() as conn:
             cur = conn.execute(
                 "INSERT INTO pending_memories (fact, source_snippet, status) VALUES (?, ?, 'pending');",
-                (fact.strip(), source_snippet.strip()),
+                (clean_fact, clean_source),
             )
             conn.commit()
             return cur.lastrowid or 0

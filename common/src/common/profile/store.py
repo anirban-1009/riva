@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from common.memory.store import is_synthetic_context
+
 
 @dataclass
 class ProfileEntry:
@@ -54,6 +56,8 @@ class ProfileStore:
         clean_key = key.strip()
         clean_val = value.strip()
         clean_cat = category.strip().lower()
+        if not clean_key or is_synthetic_context(clean_key) or is_synthetic_context(clean_val):
+            return
         with self._get_connection() as conn:
             conn.execute(
                 """

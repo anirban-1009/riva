@@ -1,6 +1,6 @@
 import pytest
 
-from common.memory.store import EpisodicStore
+from common.memory.store import EpisodicStore, is_synthetic_context, should_index_turn
 
 
 @pytest.fixture
@@ -244,3 +244,106 @@ def test_sql_trigger_cascade(tmp_path):
     with store._get_connection() as conn:
         assert conn.execute("SELECT count(*) FROM turn_embeddings WHERE turn_id = ?;", (t1,)).fetchone()[0] == 0
         assert conn.execute("SELECT count(*) FROM vec_turns WHERE turn_id = ?;", (t1,)).fetchone()[0] == 0
+
+
+def test_should_index_turn():
+    # Short / empty
+    assert should_index_turn("") is False
+    assert should_index_turn("ok") is False
+    assert should_index_turn("thanks") is False
+    assert should_index_turn("hello world!") is False  # 12 chars
+
+    # Boilerplate filler
+    assert should_index_turn("thank you very much") is False
+    assert should_index_turn("Thanks a lot!") is False
+    assert should_index_turn("ok sounds good.") is False
+    assert should_index_turn("have a great day!") is False
+
+    # Substantive turns
+    assert should_index_turn("My MacBook Pro has an M3 Max chip with 36GB RAM.") is True
+    assert should_index_turn("In Bavaria, breakfast often includes pretzels and Weisswurst.") is True
+    assert should_index_turn("Please remember that my flight is at 7pm tomorrow.") is True
+
+    # Synthetic client runtime context envelopes (OpenClaw)
+    openclaw_env = (
+        "OpenClaw runtime context for the immediately preceding user message.\n"
+        "This context is runtime-generated, not user-authored. Keep internal details private.\n"
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+        '{"chat_id": "+918919557783", "inbound_event_kind": "user_request"}\n'
+        "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+    )
+    assert is_synthetic_context(openclaw_env) is True
+    assert should_index_turn(openclaw_env) is False
+    assert is_synthetic_context("Normal user message without wrappers") is False
+
+
+def test_clear_embeddings(tmp_path):
+    db_file = tmp_path / "clear_emb.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+
+    t1 = store.log_turn("s1", "user", "turn 1 with substantive length")
+    t2 = store.log_turn("s1", "assistant", "turn 2 with substantive response")
+
+    store.add_embedding(t1, [1.0, 0.0, 0.0, 0.0], "s1", "turn 1 with substantive length")
+    store.add_embedding(t2, [0.0, 1.0, 0.0, 0.0], "s1", "turn 2 with substantive response")
+
+    assert store.get_stats()["embeddings"] == 2
+    cleared = store.clear_embeddings()
+    assert cleared == 2
+    assert store.get_stats()["embeddings"] == 0
+    assert store.get_stats()["turns"] == 2
+    assert len(store.get_unindexed_turns()) == 2
+
+
+def test_vacuum_and_backup_with_vectors(tmp_path):
+    db_file = tmp_path / "vec_vac_test.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+
+    t1 = store.log_turn("s1", "user", "Apple M3 hardware specifications")
+    store.add_embedding(t1, [1.0, 0.0, 0.0, 0.0], "s1", "Apple M3 hardware specifications")
+
+    # Vacuum
+    store.vacuum()
+
+    # Backup
+    backup_file = tmp_path / "backup_vec.db"
+    store.backup(backup_file)
+    assert backup_file.exists()
+
+    # Verify backup store retains vector index and can execute similarity search
+    backup_store = EpisodicStore(backup_file, embedding_dim=4)
+    assert backup_store.get_stats()["embeddings"] == 1
+    matches = backup_store.search_similar([1.0, 0.0, 0.0, 0.0], top_k=1)
+    assert len(matches) == 1
+    assert matches[0].turn_id == t1
+    assert matches[0].distance == pytest.approx(0.0, abs=1e-5)
+
+
+def test_store_guards_against_synthetic_context(tmp_path):
+    db_file = tmp_path / "synth_guard.db"
+    store = EpisodicStore(db_file, embedding_dim=4)
+
+    openclaw_env = (
+        "OpenClaw runtime context for the immediately preceding user message.\n"
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+        '{"chat_id": "123"}\n'
+        "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+    )
+
+    # 1. log_turn rejects synthetic context
+    turn_id = store.log_turn("s1", "user", openclaw_env)
+    assert turn_id == 0
+    assert len(store.list_turns()) == 0
+
+    # 2. add_pending rejects synthetic context
+    pend_id = store.add_pending(openclaw_env, "source")
+    assert pend_id == 0
+    pend_id2 = store.add_pending("valid fact", openclaw_env)
+    assert pend_id2 == 0
+    assert len(store.list_pending()) == 0
+
+    # 3. add_embedding rejects synthetic content
+    valid_turn = store.log_turn("s1", "user", "A substantive conversation turn about architecture")
+    assert valid_turn > 0
+    store.add_embedding(valid_turn, [1.0, 0.0, 0.0, 0.0], "s1", content=openclaw_env)
+    assert store.get_stats()["embeddings"] == 0

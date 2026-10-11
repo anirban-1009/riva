@@ -16,7 +16,15 @@ from common.llm.providers import (
     OpenAICompatibleProvider,
     create_provider,
 )
-from common.memory import EpisodicStore, PendingMemory, SessionSummary, Turn, VectorMatch
+from common.memory import (
+    EpisodicStore,
+    PendingMemory,
+    SessionSummary,
+    Turn,
+    VectorMatch,
+    is_synthetic_context,
+    should_index_turn,
+)
 from common.memory.store import get_episodic_store
 from common.profile import ProfileEntry, ProfileStore
 from common.profile.store import get_profile_store
@@ -45,6 +53,8 @@ __all__ = [
     "VectorMatch",
     "SessionSummary",
     "get_episodic_store",
+    "should_index_turn",
+    "is_synthetic_context",
 ]
 
 

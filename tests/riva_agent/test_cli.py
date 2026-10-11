@@ -375,3 +375,41 @@ def test_cli_session_commands(capsys):
     assert sid1 in out
     assert "sid-2" in out
     assert "2" in out  # turn count for sid1
+
+
+def test_cli_memory_reindex(capsys, monkeypatch):
+    parser = cli.build_parser()
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "mock")
+    monkeypatch.setattr(config, "EMBEDDING_DIMENSION", 768)
+
+    mem_store = EpisodicStore(config.DATA_DIR / "memory.db", embedding_dim=768)
+    mem_store.log_turn("s1", "user", "My MacBook Pro has 36GB unified memory.")
+    mem_store.log_turn("s1", "assistant", "Bavarian breakfast with Weisswurst.")
+    mem_store.log_turn("s1", "user", "ok")
+
+    assert mem_store.get_stats()["embeddings"] == 0
+    # SQL function should_index_turn filters out 'ok', returning only 2 substantive turns
+    assert len(mem_store.get_unindexed_turns()) == 2
+
+    # 1. Normal reindex
+    args = parser.parse_args(["memory", "reindex"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Successfully indexed 2 turns into vector store." in out
+    assert mem_store.get_stats()["embeddings"] == 2
+
+    # 2. Reindex when already up to date
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "All conversation turns are already indexed." in out
+
+    # 3. Force reindex
+    args_force = parser.parse_args(["memory", "reindex", "--force"])
+    ret = args_force.func(args_force)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Purged 2 existing vector embeddings for full reindex." in out
+    assert "Successfully indexed 2 turns into vector store" in out
+    assert mem_store.get_stats()["embeddings"] == 2

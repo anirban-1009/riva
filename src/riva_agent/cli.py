@@ -247,6 +247,60 @@ def cmd_memory_reject(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_memory_reindex(args: argparse.Namespace) -> int:
+    """Backfill or recompute vector embeddings for conversation turns."""
+    import asyncio
+
+    from common.llm.embeddings import create_embedding_provider
+
+    store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
+    if not store._vec_enabled:
+        print("Error: sqlite-vec is not enabled or available in SQLite.", file=sys.stderr)
+        return 1
+
+    if getattr(args, "force", False):
+        cleared = store.clear_embeddings()
+        print(f"Purged {cleared} existing vector embeddings for full reindex.")
+
+    unindexed = store.get_unindexed_turns(limit=args.limit)
+    if not unindexed:
+        print("All conversation turns are already indexed.")
+        return 0
+
+    print(f"Found {len(unindexed)} unindexed turns. Connecting to embedding provider '{config.EMBEDDING_PROVIDER}'...")
+
+    async def _reindex_async() -> int:
+        provider = create_embedding_provider(
+            config.EMBEDDING_PROVIDER,
+            model=config.EMBEDDING_MODEL,
+            base_url=config.EMBEDDING_BASE_URL,
+            dimension=config.EMBEDDING_DIMENSION,
+        )
+        indexed_count = 0
+
+        batch_size = max(1, args.batch_size)
+        try:
+            for i in range(0, len(unindexed), batch_size):
+                batch = unindexed[i : i + batch_size]
+                texts = [t.content for t in batch]
+                vectors = await provider.embed_documents(texts)
+                for t, vec in zip(batch, vectors):
+                    store.add_embedding(t.id, vec, session_id=t.session_id, content=t.content)
+                    indexed_count += 1
+        finally:
+            await provider.close()
+
+        return indexed_count
+
+    try:
+        indexed = asyncio.run(_reindex_async())
+        print(f"✔ Successfully indexed {indexed} turns into vector store.")
+        return 0
+    except Exception as e:
+        print(f"Error during vector reindexing: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_storage_status(args: argparse.Namespace) -> int:
     """Show storage telemetry for Riva databases and logs."""
     mem_store = get_episodic_store(config.DATA_DIR / "memory.db")
@@ -266,7 +320,9 @@ def cmd_storage_status(args: argparse.Namespace) -> int:
     print(f"{'Component':<20} {'Size':<12} {'Details'}")
     print(f"{'-' * 20:<20} {'-' * 11:<12} {'-' * 30}")
 
-    mem_details = f"(Turns: {m_stats['turns']}, Pending: {m_stats['pending']})"
+    mem_details = (
+        f"(Turns: {m_stats['turns']}, Embeddings: {m_stats.get('embeddings', 0)}, Pending: {m_stats['pending']})"
+    )
     print(f"{'Memory DB':<20} {m_stats['file_size'] / 1024:<11.2f} KB {mem_details}")
     if m_stats["wal_size"] > 0:
         print(f"{'  WAL':<20} {m_stats['wal_size'] / 1024:<11.2f} KB")
@@ -486,6 +542,12 @@ def build_parser() -> argparse.ArgumentParser:
     mem_reject = memory_sub.add_parser("reject", help="Reject a pending candidate memory")
     mem_reject.add_argument("id", type=int, help="Pending memory ID to reject")
     mem_reject.set_defaults(func=cmd_memory_reject)
+
+    mem_reindex = memory_sub.add_parser("reindex", help="Backfill vector embeddings for unindexed conversation turns")
+    mem_reindex.add_argument("--limit", "-n", type=int, default=500, help="Maximum turns to process")
+    mem_reindex.add_argument("--batch-size", type=int, default=32, help="Batch size for embedding calls")
+    mem_reindex.add_argument("--force", action="store_true", help="Clear existing embeddings and reindex all turns")
+    mem_reindex.set_defaults(func=cmd_memory_reindex)
 
     # riva storage ...
     storage_parser = subparsers.add_parser("storage", help="Manage storage lifecycle, compaction, and backups")
