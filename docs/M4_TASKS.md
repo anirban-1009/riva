@@ -1,11 +1,12 @@
 # Milestone 4 (M4) — Semantic Recall: Task List
 
-**Project Status**: 🟢 In Progress (Phase 4 Completed; Proceeding to Phase 5)
+**Project Status**: 🟢 In Progress (Phase 5 Completed; Proceeding to Phase 6)
 - [x] Local embedding provider implemented (`common/llm/embeddings.py`)
 - [x] Basic embedding tests created (`tests/common/test_embeddings.py`)
 - [x] Vector store integration (`sqlite-vec` in `common/memory/store.py`)
 - [x] Asynchronous ingestion & lifecycle management (`gateway.py`, `cli.py`, `store.py`)
 - [x] Hybrid context assembly & prompt injection (`gateway.py`, `store.py`)
+- [x] Trust surface & CLI tooling (`cli.py`, `store.py`)
 
 ## Core Objectives
 Enable cross-session semantic search to retrieve past facts and discussions relevant to the current prompt using strictly on-device embeddings and embedded vector search.
@@ -83,11 +84,11 @@ Enable cross-session semantic search to retrieve past facts and discussions rele
     - Implement `<relevant_past_context>` block in the system prompt.
 
 ### Phase 5: Trust Surface & CLI Tooling (`riva memory`)
-- [ ] **5.1 Semantic Search Command**
+- [x] **5.1 Semantic Search Command**
     - Implement `riva memory search` showing score, timestamp, and matched text.
-- [ ] **5.2 Storage Telemetry Updates**
+- [x] **5.2 Storage Telemetry Updates**
     - Update `riva storage status` to report vector count and disk footprint.
-- [ ] **5.3 Selective Deletion**
+- [x] **5.3 Selective Deletion**
     - Implement `riva memory forget-turn <turn_id>`.
 
 ### Phase 6: Evaluation & Benchmarking Suite

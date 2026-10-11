@@ -362,6 +362,7 @@ class EpisodicStore:
         top_k: int = 5,
         distance_threshold: float = 0.5,
         exclude_session_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> list[VectorMatch]:
         """Search for conversation turns semantically similar to query_vector."""
         if not self._vec_enabled or sqlite_vec is None:
@@ -383,6 +384,9 @@ class EpisodicStore:
             if exclude_session_id:
                 query += " AND t.session_id != ?"
                 params.append(exclude_session_id.strip())
+            if session_id:
+                query += " AND t.session_id = ?"
+                params.append(session_id.strip())
             query += " ORDER BY v.distance ASC;"
 
             rows = conn.execute(query, tuple(params)).fetchall()
@@ -535,6 +539,9 @@ class EpisodicStore:
             stats["turns"] = conn.execute("SELECT count(*) FROM turns;").fetchone()[0]
             stats["pending"] = conn.execute("SELECT count(*) FROM pending_memories;").fetchone()[0]
             stats["embeddings"] = conn.execute("SELECT count(*) FROM turn_embeddings;").fetchone()[0]
+
+        stats["vector_count"] = stats["embeddings"]
+        stats["vector_bytes"] = stats["embeddings"] * self.embedding_dim * 4
 
         return stats
 

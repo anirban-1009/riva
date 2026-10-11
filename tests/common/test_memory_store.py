@@ -383,3 +383,29 @@ def test_format_relevant_context(tmp_path):
     assert '[User on 2026-10-10]: "My favorite language is Python."' in formatted
     assert '[Assistant on 2026-10-10]: "Python is great for AI development."' in formatted
     assert store.format_relevant_context(matches) == formatted
+
+
+def test_episodic_store_telemetry_and_session_search(tmp_path):
+    store = EpisodicStore(tmp_path / "telemetry.db", embedding_dim=4)
+    stats_empty = store.get_stats()
+    assert stats_empty["vector_count"] == 0
+    assert stats_empty["vector_bytes"] == 0
+
+    t1 = store.log_turn("session-a", "user", "Coffee in Munich")
+    t2 = store.log_turn("session-b", "user", "Coffee in Berlin")
+    store.add_embedding(t1, [1.0, 0.0, 0.0, 0.0], "session-a", "Coffee in Munich")
+    store.add_embedding(t2, [1.0, 0.0, 0.0, 0.0], "session-b", "Coffee in Berlin")
+
+    stats = store.get_stats()
+    assert stats["vector_count"] == 2
+    # 2 vectors * 4 dim * 4 bytes/float32 = 32 bytes
+    assert stats["vector_bytes"] == 32
+
+    # Search with session_id filter
+    matches_a = store.search_similar([1.0, 0.0, 0.0, 0.0], top_k=5, distance_threshold=0.5, session_id="session-a")
+    assert len(matches_a) == 1
+    assert matches_a[0].turn_id == t1
+
+    matches_b = store.search_similar([1.0, 0.0, 0.0, 0.0], top_k=5, distance_threshold=0.5, session_id="session-b")
+    assert len(matches_b) == 1
+    assert matches_b[0].turn_id == t2
