@@ -80,3 +80,23 @@ EMBEDDING_BASE_URL: str | None = os.environ.get(
     "RIVA_EMBEDDING_BASE_URL", _embedding_config.get("base_url", OLLAMA_BASE_URL)
 )
 EMBEDDING_DIMENSION: int = int(os.environ.get("RIVA_EMBEDDING_DIMENSION", _embedding_config.get("dimension", 768)))
+
+# Semantic recall parameters for Hybrid Context Assembly (M4 Phase 4)
+SEMANTIC_RECALL_ENABLED: bool = os.environ.get(
+    "RIVA_SEMANTIC_RECALL",
+    str(_config.get("semantic_recall", True)),
+).lower() in ("true", "1", "yes")
+
+SEMANTIC_TOP_K: int = int(
+    os.environ.get(
+        "RIVA_SEMANTIC_TOP_K",
+        str(_embedding_config.get("top_k", 3)),
+    )
+)
+
+SEMANTIC_DISTANCE_THRESHOLD: float = float(
+    os.environ.get(
+        "RIVA_SEMANTIC_DISTANCE_THRESHOLD",
+        str(_embedding_config.get("threshold", 0.38)),
+    )
+)

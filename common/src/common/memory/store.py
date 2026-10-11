@@ -98,6 +98,18 @@ def should_index_turn(content: str) -> bool:
     return True
 
 
+def format_relevant_context(matches: list[VectorMatch]) -> str:
+    """Format semantic vector matches into an XML context block for prompt injection."""
+    if not matches:
+        return ""
+    lines = ["<relevant_past_context>", "Relevant discussions and facts recalled from past conversations:"]
+    for m in matches:
+        date_str = m.created_at.split()[0] if m.created_at else "past session"
+        lines.append(f'- [{m.role.capitalize()} on {date_str}]: "{m.content.strip()}"')
+    lines.append("</relevant_past_context>")
+    return "\n".join(lines)
+
+
 class EpisodicStore:
     """Local SQLite-backed episodic store for conversation turns, staged candidate memories, and vector recall."""
 
@@ -385,6 +397,10 @@ class EpisodicStore:
                 )
                 for r in rows
             ]
+
+    def format_relevant_context(self, matches: list[VectorMatch]) -> str:
+        """Format semantic vector matches into an XML context block for prompt injection."""
+        return format_relevant_context(matches)
 
     def delete_embedding(self, turn_id: int) -> bool:
         """Permanently delete a vector embedding without deleting the turn itself."""

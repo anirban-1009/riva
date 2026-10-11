@@ -22,6 +22,7 @@ from common.memory import (
     SessionSummary,
     Turn,
     VectorMatch,
+    format_relevant_context,
     is_synthetic_context,
     should_index_turn,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "get_episodic_store",
     "should_index_turn",
     "is_synthetic_context",
+    "format_relevant_context",
 ]
 
 

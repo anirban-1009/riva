@@ -1,10 +1,11 @@
 # Milestone 4 (M4) — Semantic Recall: Task List
 
-**Project Status**: 🟢 In Progress (Phase 3 Completed; Proceeding to Phase 4)
+**Project Status**: 🟢 In Progress (Phase 4 Completed; Proceeding to Phase 5)
 - [x] Local embedding provider implemented (`common/llm/embeddings.py`)
 - [x] Basic embedding tests created (`tests/common/test_embeddings.py`)
 - [x] Vector store integration (`sqlite-vec` in `common/memory/store.py`)
 - [x] Asynchronous ingestion & lifecycle management (`gateway.py`, `cli.py`, `store.py`)
+- [x] Hybrid context assembly & prompt injection (`gateway.py`, `store.py`)
 
 ## Core Objectives
 Enable cross-session semantic search to retrieve past facts and discussions relevant to the current prompt using strictly on-device embeddings and embedded vector search.
@@ -73,12 +74,12 @@ Enable cross-session semantic search to retrieve past facts and discussions rele
 
 
 ### Phase 4: Hybrid Context Assembly in Gateway
-- [ ] **4.1 Hybrid Retrieval Logic**
+- [x] **4.1 Hybrid Retrieval Logic**
     - Concurrent fetch: Profile facts $\rightarrow$ Recent session turns $\rightarrow$ Semantic matches from past sessions.
-- [ ] **4.2 Deduplication & Thresholding**
+- [x] **4.2 Deduplication & Thresholding**
     - Exclude turns already in the active recency window.
-    - Implement cosine distance threshold $\tau$ (e.g., $> 0.38$) to prevent hallucinations.
-- [ ] **4.3 Prompt Injector Formatting**
+    - Implement cosine distance threshold $\tau$ (e.g., $\le 0.38$) to prevent hallucinations.
+- [x] **4.3 Prompt Injector Formatting**
     - Implement `<relevant_past_context>` block in the system prompt.
 
 ### Phase 5: Trust Surface & CLI Tooling (`riva memory`)

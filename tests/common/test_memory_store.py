@@ -347,3 +347,39 @@ def test_store_guards_against_synthetic_context(tmp_path):
     assert valid_turn > 0
     store.add_embedding(valid_turn, [1.0, 0.0, 0.0, 0.0], "s1", content=openclaw_env)
     assert store.get_stats()["embeddings"] == 0
+
+
+def test_format_relevant_context(tmp_path):
+    from common.memory.store import EpisodicStore, VectorMatch, format_relevant_context
+
+    # Empty list
+    assert format_relevant_context([]) == ""
+
+    store = EpisodicStore(tmp_path / "fmt.db", embedding_dim=4)
+    assert store.format_relevant_context([]) == ""
+
+    matches = [
+        VectorMatch(
+            turn_id=1,
+            session_id="sess-1",
+            role="user",
+            content="My favorite language is Python.",
+            distance=0.12,
+            created_at="2026-10-10 14:00:00",
+        ),
+        VectorMatch(
+            turn_id=2,
+            session_id="sess-1",
+            role="assistant",
+            content="Python is great for AI development.",
+            distance=0.25,
+            created_at="2026-10-10 14:00:05",
+        ),
+    ]
+
+    formatted = format_relevant_context(matches)
+    assert "<relevant_past_context>" in formatted
+    assert "</relevant_past_context>" in formatted
+    assert '[User on 2026-10-10]: "My favorite language is Python."' in formatted
+    assert '[Assistant on 2026-10-10]: "Python is great for AI development."' in formatted
+    assert store.format_relevant_context(matches) == formatted

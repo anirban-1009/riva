@@ -15,6 +15,10 @@ from fastapi.responses import StreamingResponse
 
 from common import (
     EpisodicStore,
+    ProfileStore,
+    Turn,
+    VectorMatch,
+    format_relevant_context,
     get_episodic_store,
     get_profile_store,
     is_synthetic_context,
@@ -118,6 +122,77 @@ def schedule_turn_indexing(
         task.add_done_callback(_background_tasks.discard)
     except RuntimeError:
         pass
+
+
+async def retrieve_hybrid_context(
+    user_query: str,
+    session_id: str,
+    profile_store: ProfileStore,
+    episodic_store: EpisodicStore,
+    *,
+    embedding_provider: EmbeddingProvider | None = None,
+    top_k: int = 3,
+    distance_threshold: float = 0.38,
+    enable_semantic: bool = True,
+) -> tuple[str, list[Turn], list[VectorMatch]]:
+    """Concurrently retrieve profile context, recent session turns, and semantic past context.
+
+    Features:
+    - Concurrent fetch: profile facts + active session turns + cross-session semantic search.
+    - Active recency deduplication: excludes turns currently in the active recency window.
+    - Content deduplication: suppresses duplicate text across past matches.
+    - Thresholding: enforces cosine distance threshold <= distance_threshold (default: 0.38).
+    - Resilience: handles vector extension or provider errors gracefully without failing.
+    """
+
+    async def _fetch_semantic() -> list[VectorMatch]:
+        if not enable_semantic or not user_query.strip() or not episodic_store._vec_enabled:
+            return []
+        if not should_index_turn(user_query):
+            return []
+        try:
+            provider = embedding_provider or get_embedding_provider()
+            query_vector = await provider.embed_query(user_query)
+            if not query_vector:
+                return []
+            matches = episodic_store.search_similar(
+                query_vector,
+                top_k=top_k,
+                distance_threshold=distance_threshold,
+                exclude_session_id=session_id,
+            )
+            return matches
+        except Exception as e:
+            logger.warning("Semantic memory retrieval failed: %s", e)
+            return []
+
+    profile_task = asyncio.to_thread(profile_store.format_context)
+    recent_task = asyncio.to_thread(episodic_store.get_recent_turns, session_id, 6)
+    semantic_task = _fetch_semantic()
+
+    profile_ctx, recent_turns, semantic_matches = await asyncio.gather(
+        profile_task,
+        recent_task,
+        semantic_task,
+    )
+
+    # Deduplicate against active recency window and suppress content duplicates
+    recent_turn_ids = {t.id for t in recent_turns}
+    seen_contents: set[str] = set()
+    deduped_matches: list[VectorMatch] = []
+
+    for m in semantic_matches:
+        clean = m.content.strip()
+        if m.turn_id in recent_turn_ids:
+            continue
+        if clean.lower() in seen_contents:
+            continue
+        if is_synthetic_context(clean) or not should_index_turn(clean):
+            continue
+        seen_contents.add(clean.lower())
+        deduped_matches.append(m)
+
+    return profile_ctx, recent_turns, deduped_matches
 
 
 @asynccontextmanager
@@ -382,17 +457,7 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         profile_store = get_profile_store(config.DATA_DIR / "profile.db")
         episodic_store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
 
-        # 1. Profile Context injection
-        profile_ctx = profile_store.format_context()
-        assistant_persona = "You are Riva, a private personal assistant that knows me."
-        system_instruction = f"{assistant_persona}\n\n{profile_ctx}" if profile_ctx else assistant_persona
-
-        if messages_payload and messages_payload[0]["role"] == "system":
-            messages_payload[0]["content"] = f"{system_instruction}\n\n{messages_payload[0]['content']}"
-        else:
-            messages_payload.insert(0, {"role": "system", "content": system_instruction})
-
-        # 2. Check for Session Reset / New Session commands (triggerable via Signal, CLI, or API)
+        # 1. Check for Session Reset / New Session commands (triggerable via Signal, CLI, or API)
         reset_match = _RESET_COMMAND_REGEX.match(user_query.strip())
         if reset_match:
             session_id = reset_session_id()
@@ -454,21 +519,45 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
                     )
                 )
 
-            # Tail query present: reset history payload to just system instruction and the fresh user query
+            # Tail query present: reset history payload to fresh user query
+            user_query = tail
+
+        # 2. Hybrid Context Assembly (Concurrent profile facts, recent turns, and semantic matches)
+        profile_ctx, recent_turns, semantic_matches = await retrieve_hybrid_context(
+            user_query=user_query,
+            session_id=session_id,
+            profile_store=profile_store,
+            episodic_store=episodic_store,
+            top_k=config.SEMANTIC_TOP_K,
+            distance_threshold=config.SEMANTIC_DISTANCE_THRESHOLD,
+            enable_semantic=config.SEMANTIC_RECALL_ENABLED,
+        )
+
+        assistant_persona = "You are Riva, a private personal assistant that knows me."
+        system_parts = [assistant_persona]
+        if profile_ctx:
+            system_parts.append(profile_ctx)
+        past_context_block = format_relevant_context(semantic_matches)
+        if past_context_block:
+            system_parts.append(past_context_block)
+        system_instruction = "\n\n".join(system_parts)
+
+        if reset_match and tail:
             messages_payload = [
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": tail},
             ]
-            user_query = tail
+        elif messages_payload and messages_payload[0]["role"] == "system":
+            messages_payload[0]["content"] = f"{system_instruction}\n\n{messages_payload[0]['content']}"
+        else:
+            messages_payload.insert(0, {"role": "system", "content": system_instruction})
 
-        # 2. Conversational Recency Replay (for single-turn requests such as `riva ask`)
+        # 3. Conversational Recency Replay (for single-turn requests such as `riva ask`)
         non_system_req = [m for m in request.messages if m.role != "system" and not is_synthetic_context(m.content)]
-        if len(non_system_req) <= 1 and episodic_store and not reset_match:
-            past_turns = episodic_store.get_recent_turns(session_id, limit=6)
-            if past_turns:
-                history_msgs = [{"role": t.role, "content": t.content} for t in past_turns]
-                current_non_system = [m for m in messages_payload if m["role"] != "system"]
-                messages_payload = [messages_payload[0]] + history_msgs + current_non_system
+        if len(non_system_req) <= 1 and recent_turns and not reset_match:
+            history_msgs = [{"role": t.role, "content": t.content} for t in recent_turns]
+            current_non_system = [m for m in messages_payload if m["role"] != "system"]
+            messages_payload = [messages_payload[0]] + history_msgs + current_non_system
 
         # 3. Episodic Log & Directive / Candidate Extraction
         if user_query and not is_synthetic_context(user_query):
