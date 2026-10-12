@@ -9,11 +9,11 @@ reference for the next time the machine feels sluggish while a local model
 is loaded.
 
 > **This was round one of three.** The fix here (`UD-Q3_K_XL`) solved the
-> memory problem; `docs/model-context-window.md` covers a context-window bug
-> it introduced for OpenClaw, and `docs/mlx-server-evaluation.md` covers a
+> memory problem; `model-context-window.md` covers a context-window bug
+> it introduced for OpenClaw, and `mlx-server-evaluation.md` covers a
 > real speed regression found afterward that led to switching backends
 > entirely. The model actually live in `config.yml` today is the one from
-> that third round, not this one — see `docs/mlx-server-evaluation.md`'s
+> that third round, not this one — see `mlx-server-evaluation.md`'s
 > "Current status" for what's actually running.
 
 ## What was actually happening

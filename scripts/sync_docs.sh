@@ -59,22 +59,33 @@ aliases = {
     "nlp-memory-routing.md": "NLP-Memory-Routing-Learnings-and-Pitfalls.md",
 }
 
-def doc_to_wiki(name):
-    if name in aliases:
-        return aliases[name]
-    stem = name.removesuffix(".md").replace("_", "-")
+def doc_to_wiki(rel_path):
+    base = os.path.basename(rel_path)
+    if base in aliases:
+        return aliases[base]
+    stem = base.removesuffix(".md").replace("_", "-")
     words = stem.split("-")
     wiki_words = [acronyms.get(w.lower(), w.capitalize()) for w in words]
     return "-".join(wiki_words) + ".md"
 
-def wiki_to_doc(name):
-    for d, w in aliases.items():
-        if w.lower() == name.lower():
-            return d
+def wiki_to_doc(name, rel_paths):
+    for rel in rel_paths:
+        base = os.path.basename(rel)
+        if base in aliases and aliases[base].lower() == name.lower():
+            return rel
+        stem = base.removesuffix(".md").replace("_", "-")
+        words = stem.split("-")
+        expected_wiki = "-".join(acronyms.get(w.lower(), w.capitalize()) for w in words) + ".md"
+        if expected_wiki.lower() == name.lower():
+            return rel
     stem = name.removesuffix(".md")
     return stem.lower().replace("_", "-") + ".md"
 
-docs_files = {os.path.basename(f) for f in glob.glob(f"{docs_dir}/*.md")}
+docs_files = {
+    os.path.relpath(f, docs_dir)
+    for f in glob.glob(f"{docs_dir}/**/*.md", recursive=True)
+    if os.path.basename(f) != "README.md"
+}
 wiki_files = {os.path.basename(f) for f in glob.glob(f"{wiki_dir}/*.md") if os.path.basename(f) not in exclude_wiki}
 
 pairs = {}
@@ -82,7 +93,7 @@ for d in docs_files:
     pairs[d] = doc_to_wiki(d)
 
 for w in wiki_files:
-    d = wiki_to_doc(w)
+    d = wiki_to_doc(w, docs_files)
     if d not in pairs:
         pairs[d] = w
 
@@ -226,6 +237,7 @@ cmd_wiki_to_docs() {
         local wiki_path="${WIKI_DIR}/${wiki_file}"
 
         if [[ -f "${wiki_path}" ]]; then
+            mkdir -p "$(dirname "${doc_path}")"
             render_docs_file "${wiki_path}" "${wiki_file}" > "${doc_path}"
             log_success "Synced wiki/${wiki_file} -> docs/${doc_file}"
         else

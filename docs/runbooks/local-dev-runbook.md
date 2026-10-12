@@ -3,8 +3,8 @@
 > Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/Local-Dev-Runbook) — the wiki is the canonical source; update it first.
 
 Command reference for running `riva-agent` locally against the current
-inference backend (`mlx_lm.server` + MLX, see `docs/local-model-memory.md`
-and `docs/model-context-window.md` for how this setup was chosen). Kept
+inference backend (`mlx_lm.server` + MLX, see `../inference/local-model-memory.md`
+and `../inference/model-context-window.md` for how this setup was chosen). Kept
 separate from the investigation docs since this one's meant to be looked up
 quickly, not read start to end.
 

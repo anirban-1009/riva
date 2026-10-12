@@ -252,13 +252,16 @@ The canonical documentation is maintained in the [GitHub Wiki](https://github.co
 
 | Document | Description |
 |---|---|
-| **[Product Definition](docs/product-definition.md)** | Core principles, v1 acceptance criteria, memory admission policy, and roadmap. |
-| **[Development Timeline](docs/development-timeline.md)** | Milestone schedule from Foundation (M0) through Trust CLI (M3/v1) and Semantic Recall (M4). |
-| **[Local Dev Runbook](docs/local-dev-runbook.md)** | Service management, port mappings, disaster recovery, and operational procedures. |
-| **[Architecture](docs/architecture.md)** | System design, virtual model routing, plugin protocol, and data boundaries. |
-| **[Inference Latency Investigation](docs/inference-latency.md)** | Root causes of local model latency, thinking heuristics, and MLX benchmarks. |
-| **[Memory Store Evaluation](docs/memory-store-evaluation.md)** | Empirical benchmarks comparing SQLite, local Mem0, and hybrid routing. |
-| **[NLP Memory Routing Learnings](docs/nlp-memory-routing.md)** | Why dependency parsing outperforms embedding classification for memory gating. |
+| **[Product Definition](docs/product/product-definition.md)** | Core principles, v1 acceptance criteria, memory admission policy, and roadmap. |
+| **[Development Timeline](docs/product/development-timeline.md)** | Milestone schedule from Foundation (M0) through Trust CLI (M3/v1) and Semantic Recall (M4). |
+| **[Architecture](docs/architecture/architecture.md)** | System design, virtual model routing, plugin protocol, and data boundaries. |
+| **[Assistant Capabilities](docs/architecture/assistant-capabilities.md)** | Assistant runtime modes, capability matrix, extended-thinking heuristics, and tooling. |
+| **[Semantic Memory Architecture](docs/memory/semantic-memory-architecture.md)** | On-device vector embeddings, `sqlite-vec` integration, hybrid context assembly, and pollution defense. |
+| **[NLP Memory Routing Learnings](docs/memory/nlp-memory-routing.md)** | Why dependency parsing outperforms embedding classification for memory gating. |
+| **[Memory Store Evaluation](docs/memory/memory-store-evaluation.md)** | Empirical benchmarks comparing SQLite, local Mem0, and hybrid routing. |
+| **[Inference Latency Investigation](docs/inference/inference-latency.md)** | Root causes of local model latency, thinking heuristics, and MLX benchmarks. |
+| **[Local Dev Runbook](docs/runbooks/local-dev-runbook.md)** | Service management, port mappings, disaster recovery, and operational procedures. |
+| **[Documentation Index](docs/README.md)** | Complete categorization and directory navigation for all technical documents. |
 
 ---
 

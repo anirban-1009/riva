@@ -2,7 +2,7 @@
 
 > Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/Development-Timeline) — the wiki is the canonical source; update it first.
 
-Based on the canonical specifications in the [Product Definition](https://github.com/anirban-1009/riva/wiki/Product-Definition) and [Architecture](architecture.md), this document outlines a phased development timeline to deliver Riva as a private, persistent personal assistant.
+Based on the canonical specifications in the [Product Definition](https://github.com/anirban-1009/riva/wiki/Product-Definition) and [Architecture](../architecture/architecture.md), this document outlines a phased development timeline to deliver Riva as a private, persistent personal assistant.
 
 ---
 

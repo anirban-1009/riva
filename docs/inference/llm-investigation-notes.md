@@ -4,7 +4,7 @@
 
 A plain walkthrough of what we actually did today while chasing down why the
 laptop was struggling to run the local model, in the order we did it. See
-`docs/local-model-memory.md` for the formal write-up with full data; this is
+`local-model-memory.md` for the formal write-up with full data; this is
 the shorter "what happened and why" version.
 
 ## 1. Started because the laptop felt slow
@@ -104,6 +104,6 @@ the running gateway (a request asking for a different model still comes back
 tagged `UD-Q3_K_XL`). This is still based on one test prompt, not a full
 evaluation, so it's worth trying it on some actual day-to-day prompts to be
 sure quality holds up outside the one thing we tested (see
-`docs/local-model-memory.md` for the full caveats). The two models we no
+`local-model-memory.md` for the full caveats). The two models we no
 longer need (`gemma3:4b`, `UD-Q4_K_XL`) can be removed from Ollama to free
 up disk.

@@ -4,13 +4,13 @@
 
 This document records a `400 Bad Request` investigation that surfaced right
 after switching the default local model to `UD-Q3_K_XL` (see
-`docs/local-model-memory.md`), including a wrong first guess that's worth
+`local-model-memory.md`), including a wrong first guess that's worth
 keeping on record so it doesn't get re-chased next time. Kept as a reference
 for the next context-window-shaped error.
 
 > **Round two of three.** `gemma4-q3-16k` (the fix below) was later replaced
 > by a different backend entirely after a real speed regression turned up —
-> see `docs/mlx-server-evaluation.md` for what's actually live in
+> see `mlx-server-evaluation.md` for what's actually live in
 > `config.yml` today. The context-window lesson here still applies to
 > whatever model runs next, which is why this page is worth keeping.
 
@@ -62,7 +62,7 @@ failing request was 8042 tokens — double what was available.
 ## The fix — and the tradeoff behind the number chosen
 
 Context window size drives KV-cache memory directly, which is exactly the
-resource `docs/local-model-memory.md` spent effort shrinking (10GB → 6.45GB
+resource `local-model-memory.md` spent effort shrinking (10GB → 6.45GB
 resident). Jumping straight to OpenClaw's configured expectation
 (`contextWindow: 128000`) would have clawed back a meaningful chunk of that
 saving. Went with **16384** instead — 2x headroom over the 8042-token prompt
@@ -101,4 +101,4 @@ The lesson for next time: when a model gets swapped, check its actual
 loaded context window (`ollama show <tag>`) against what real clients send,
 not just what fits in a quick manual test — the failure only showed up under
 OpenClaw's real prompt sizes, not the short test prompts used during the
-memory benchmark in `docs/local-model-memory.md`.
+memory benchmark in `local-model-memory.md`.

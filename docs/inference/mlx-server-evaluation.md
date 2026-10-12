@@ -3,9 +3,9 @@
 > Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/MLX-Server-Evaluation) — the wiki is the canonical source; update it first.
 
 Third round of the local-model evaluation that started in
-`docs/local-model-memory.md`. That doc solved the memory problem (Ollama +
+`local-model-memory.md`. That doc solved the memory problem (Ollama +
 GGUF quant) but introduced a real speed regression that only showed up once
-`docs/model-context-window.md`'s context-window bug was fixed and steady-state
+`model-context-window.md`'s context-window bug was fixed and steady-state
 throughput could actually be measured cleanly. This document covers what was
 tried next, why, and the numbers behind the model currently live in
 `config.yml`.
@@ -81,7 +81,7 @@ All three measured with the same fixed prompt on the same hardware
 
 Resident RAM measured system-wide (`top`'s process MEM column), not `ps`
 RSS — `ps` undercounts MLX's Metal-offloaded memory, a lesson learned the
-hard way during the first benchmark round (see `docs/local-model-memory.md`,
+hard way during the first benchmark round (see `local-model-memory.md`,
 footnote 1).
 
 Generation speed: first request after a cold load measured 20.6 tok/s
@@ -115,7 +115,7 @@ cost/ecological tradeoffs). No degradation visible on this test.
 - **Operational cost:** `mlx_lm.server` is a second long-lived process
   outside Ollama's management — no `keep_alive`, no automatic reboot
   survival, no shared model registry with Ollama's other tags. See
-  `docs/local-dev-runbook.md` for start/stop/recovery commands.
+  `../runbooks/local-dev-runbook.md` for start/stop/recovery commands.
 - **Not hardened for exposure beyond localhost.** Checked its source
   directly: it's built on Python's stdlib `http.server`
   (`ThreadingHTTPServer` + `BaseHTTPRequestHandler`), not a real ASGI server
