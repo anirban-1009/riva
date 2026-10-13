@@ -32,6 +32,13 @@ Use the dev stack orchestration script, which handles environment validation, de
 - **Interactive model selection**: Reads `model:` from `config.yml`. If unconfigured, interactively prompts to select from recommended pre-quantized MLX models (Gemma 4, Qwen 2.5, Llama 3.1) or specify a custom Hugging Face model, with the option to persist the choice to `config.yml`.
 - **Hugging Face cache & download detection**: Detects whether the model is already downloaded in `~/.cache/huggingface/hub/`. If missing, it notifies you that weights are downloading and expands the startup timeout budget to 10 minutes (with process crash detection).
 - **Provider-aware**: Automatically skips MLX startup if `provider: ollama` is active in `config.yml` and verifies Ollama on port 11434.
+Use the dev stack orchestration script, which handles environment validation, dependency installation, model setup, and service orchestration:
+
+- **Platform validation**: Verifies macOS on Apple Silicon (`arm64`). If run on an Intel Mac or Linux, it alerts you to configure `provider: ollama` instead.
+- **Automatic `mlx-lm` bootstrap**: If `mlx_lm.server` is not found in `PATH`, the script prompts to install it automatically via `uv tool install mlx-lm` (or `pip install --user mlx-lm`).
+- **Interactive model selection**: Reads `model:` from `config.yml`. If unconfigured, interactively prompts to select from recommended pre-quantized MLX models (Gemma 4, Qwen 2.5, Llama 3.1) or specify a custom Hugging Face model, with the option to persist the choice to `config.yml`.
+- **Hugging Face cache & download detection**: Detects whether the model is already downloaded in `~/.cache/huggingface/hub/`. If missing, it notifies you that weights are downloading and expands the startup timeout budget to 10 minutes (with process crash detection).
+- **Provider-aware**: Automatically skips MLX startup if `provider: ollama` is active in `config.yml` and verifies Ollama on port 11434.
 
 ```bash
 # Start the full stack (background)
@@ -155,6 +162,12 @@ off mid-operation.
 something's already bound to that port — almost always a previous instance
 still running. Find and kill it (see above), confirm the port is free, then
 retry the start command.
+
+**`mlx_lm.server` command not found:**
+If `./scripts/start_stack.sh` reports that `mlx_lm.server` is missing, the script will offer to install it automatically. You can also install it manually via `uv tool install mlx-lm` (or `pip install --user mlx-lm`). Ensure `~/.local/bin` is in your `$PATH`. Note that MLX is Apple Silicon only (`arm64` macOS); on Intel or Linux, use `provider: ollama`.
+
+**First-run model download taking time:**
+When loading a model for the first time, `mlx_lm.server` downloads weights from Hugging Face into `~/.cache/huggingface/hub/`. The script automatically allows up to 10 minutes for this initial download. You can observe the live download progress in a separate terminal with `./scripts/start_stack.sh logs` or `tail -f ~/.riva/logs/mlx_server.log`.
 
 **`mlx_lm.server` command not found:**
 If `./scripts/start_stack.sh` reports that `mlx_lm.server` is missing, the script will offer to install it automatically. You can also install it manually via `uv tool install mlx-lm` (or `pip install --user mlx-lm`). Ensure `~/.local/bin` is in your `$PATH`. Note that MLX is Apple Silicon only (`arm64` macOS); on Intel or Linux, use `provider: ollama`.
