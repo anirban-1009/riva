@@ -3,10 +3,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from common.llm.embeddings import MockEmbeddingProvider
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
 from riva_agent import config
-from riva_agent.api.gateway import app
+from riva_agent.api.gateway import app, set_embedding_provider
 
 
 @pytest.fixture
@@ -21,7 +22,10 @@ def isolated_data_dir(tmp_path, monkeypatch):
     data_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "DATA_DIR", data_dir)
     monkeypatch.setattr(config, "MODEL", None)
-    return data_dir
+    mock_emb = MockEmbeddingProvider(dimension=768)
+    set_embedding_provider(mock_emb)
+    yield data_dir
+    set_embedding_provider(None)
 
 
 @pytest.mark.asyncio
@@ -97,13 +101,12 @@ async def test_chat_completions_assistant_mode(client, isolated_data_dir):
 
         # Verify turn was logged in episodic store
         mem_store = EpisodicStore(isolated_data_dir / "memory.db")
-        with mem_store._get_connection() as conn:
-            turns = conn.execute("SELECT role, content FROM turns;").fetchall()
+        turns = mem_store.list_turns()
         assert len(turns) == 2
-        assert turns[0]["role"] == "user"
-        assert turns[0]["content"] == "Where do I live?"
-        assert turns[1]["role"] == "assistant"
-        assert turns[1]["content"] == "I know you live in Munich!"
+        assert turns[1].role == "user"
+        assert turns[1].content == "Where do I live?"
+        assert turns[0].role == "assistant"
+        assert turns[0].content == "I know you live in Munich!"
 
 
 @pytest.mark.asyncio
@@ -262,8 +265,7 @@ async def test_chat_completions_passthrough_mode(client, isolated_data_dir):
 
         # Verify NO turns logged in episodic memory
         mem_store = EpisodicStore(isolated_data_dir / "memory.db")
-        with mem_store._get_connection() as conn:
-            turns = conn.execute("SELECT * FROM turns;").fetchall()
+        turns = mem_store.list_turns()
         assert len(turns) == 0
 
 
@@ -462,3 +464,347 @@ async def test_chat_completions_reset_command_with_query(client, isolated_data_d
         assert turns[0].role == "user"
         assert turns[0].content == "What is the capital of France?"
         assert turns[1].role == "assistant"
+
+
+@pytest.mark.asyncio
+async def test_background_vector_indexing_on_turn(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "That is a powerful computer for running local models!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "My computer has 64GB unified memory and Apple M3 Max."}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        # Wait briefly for background task to complete
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        stats = mem_store.get_stats()
+        # Both user query and assistant response are substantive (> 15 chars) and should be vector embedded
+        assert stats["turns"] == 2
+        assert stats["embeddings"] == 2
+
+
+@pytest.mark.asyncio
+async def test_background_vector_indexing_boilerplate_filtering(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "thank you"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "ok sounds good"}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        stats = mem_store.get_stats()
+        # Turns are recorded in SQLite history, but skipped for vector embeddings due to low semantic signal
+        assert stats["turns"] == 2
+        assert stats["embeddings"] == 0
+
+
+@pytest.mark.asyncio
+async def test_synthetic_context_not_logged_as_episodic_turn(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "I am ready to help."
+        mock_create.return_value = mock_provider
+
+        openclaw_msg = (
+            "OpenClaw runtime context for the immediately preceding user message.\n"
+            "This context is runtime-generated, not user-authored. Keep internal details private.\n"
+            "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+            '{"chat_id": "123", "inbound_event_kind": "user_request"}\n'
+            "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+        )
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is the capital of Japan?"},
+                {"role": "assistant", "content": "The capital of Japan is Tokyo."},
+                {"role": "user", "content": openclaw_msg},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        turns = mem_store.list_turns(limit=10)
+        # Verify the synthetic OpenClaw turn was NOT recorded as a user turn
+        for t in turns:
+            assert "OPENCLAW_INTERNAL_CONTEXT" not in t.content
+            assert "OpenClaw runtime context" not in t.content
+
+
+def test_strip_thinking_tags():
+    from riva_agent.api.gateway import strip_thinking_tags
+
+    assert strip_thinking_tags("Normal text without tags") == "Normal text without tags"
+    assert strip_thinking_tags("<think>internal reasoning</think>Final response") == "Final response"
+    multiline = "<think>\nThinking step 1...\nThinking step 2...\n</think>\n\nHere is the clean answer."
+    assert strip_thinking_tags(multiline) == "Here is the clean answer."
+    assert strip_thinking_tags("<think>only thinking</think>") == ""
+
+
+@pytest.mark.asyncio
+async def test_assistant_turn_strips_thinking_tags(client, isolated_data_dir):
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = (
+            "<think>\nLet me deliberate on this question.\n</think>\nTokyo is the capital of Japan."
+        )
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is the capital of Japan?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        import asyncio
+
+        await asyncio.sleep(0.05)
+
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+        turns = mem_store.list_turns(limit=10)
+        asst_turns = [t for t in turns if t.role == "assistant"]
+        assert len(asst_turns) == 1
+        assert "<think>" not in asst_turns[0].content
+        assert "</think>" not in asst_turns[0].content
+        assert asst_turns[0].content == "Tokyo is the capital of Japan."
+
+
+@pytest.mark.asyncio
+async def test_synthetic_context_does_not_break_recency_replay(client, isolated_data_dir):
+    mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=768)
+    session_file = isolated_data_dir / "session.id"
+    session_id = session_file.read_text().strip() if session_file.exists() else "test-session"
+    session_file.write_text(session_id)
+
+    # Seed past turns into episodic history
+    mem_store.log_turn(session_id, "user", "My favorite color is green.")
+    mem_store.log_turn(session_id, "assistant", "Noted, your favorite color is green.")
+
+    openclaw_env = (
+        "OpenClaw runtime context for the immediately preceding user message.\n"
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+        '{"chat_id": "456"}\n'
+        "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+    )
+
+    with patch("riva_agent.api.gateway.create_provider") as mock_create:
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "Your favorite color is green!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": openclaw_env},
+                {"role": "user", "content": "What is my favorite color?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        # Verify chat_async was called with past turns replayed in messages_payload
+        call_args = mock_provider.chat_async.call_args[0][0]
+        call_contents = [m["content"] for m in call_args]
+        assert any("My favorite color is green." in c for c in call_contents)
+
+
+@pytest.mark.asyncio
+async def test_gateway_lifespan():
+    from riva_agent.api.gateway import app, lifespan
+
+    with patch("riva_agent.api.gateway.get_thinking_router") as mock_tr:
+        async with lifespan(app):
+            mock_tr.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_context_dedup_and_thresholding(tmp_path):
+    from common.memory.store import EpisodicStore
+    from common.profile.store import ProfileStore
+    from riva_agent.api.gateway import retrieve_hybrid_context
+
+    prof_store = ProfileStore(tmp_path / "prof.db")
+    prof_store.set("job", "Software Architect", category="facts")
+
+    mem_store = EpisodicStore(tmp_path / "mem.db", embedding_dim=4)
+    # Turn in active session
+    t_active = mem_store.log_turn("current-sess", "user", "I live in San Francisco.")
+    # Turn in past session 1
+    t_past1 = mem_store.log_turn("past-sess-1", "user", "I am training for a half-marathon in Berlin.")
+    # Duplicate turn in past session 2
+    t_past2 = mem_store.log_turn("past-sess-2", "user", "I am training for a half-marathon in Berlin.")
+
+    # Add embeddings (unit vectors)
+    mem_store.add_embedding(t_active, [1.0, 0.0, 0.0, 0.0], "current-sess", "I live in San Francisco.")
+    marathon_text = "I am training for a half-marathon in Berlin."
+    mem_store.add_embedding(t_past1, [0.0, 1.0, 0.0, 0.0], "past-sess-1", marathon_text)
+    mem_store.add_embedding(t_past2, [0.0, 1.0, 0.0, 0.0], "past-sess-2", marathon_text)
+
+    mock_emb_provider = AsyncMock()
+    # Query vector matches [0.0, 1.0, 0.0, 0.0] exactly
+    mock_emb_provider.embed_query.return_value = [0.0, 1.0, 0.0, 0.0]
+
+    profile_ctx, recent_turns, matches = await retrieve_hybrid_context(
+        user_query="How is marathon training going?",
+        session_id="current-sess",
+        profile_store=prof_store,
+        episodic_store=mem_store,
+        embedding_provider=mock_emb_provider,
+        top_k=3,
+        distance_threshold=0.38,
+        enable_semantic=True,
+    )
+
+    assert "Software Architect" in profile_ctx
+    assert len(recent_turns) == 1
+    assert recent_turns[0].id == t_active
+    # Past session turns should match, but deduplicated down to 1 match
+    assert len(matches) == 1
+    assert matches[0].turn_id in (t_past1, t_past2)
+    assert matches[0].distance == pytest.approx(0.0, abs=1e-5)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_context_resilience(tmp_path):
+    from common.memory.store import EpisodicStore
+    from common.profile.store import ProfileStore
+    from riva_agent.api.gateway import retrieve_hybrid_context
+
+    prof_store = ProfileStore(tmp_path / "prof.db")
+    mem_store = EpisodicStore(tmp_path / "mem.db", embedding_dim=4)
+
+    mock_failing_provider = AsyncMock()
+    mock_failing_provider.embed_query.side_effect = RuntimeError("Embedding service unavailable")
+
+    profile_ctx, recent_turns, matches = await retrieve_hybrid_context(
+        user_query="Some query that triggers embedding",
+        session_id="s1",
+        profile_store=prof_store,
+        episodic_store=mem_store,
+        embedding_provider=mock_failing_provider,
+        enable_semantic=True,
+    )
+
+    assert matches == []
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_injects_relevant_past_context(client, isolated_data_dir):
+    from common.memory.store import EpisodicStore
+    from common.profile.store import ProfileStore
+
+    prof_store = ProfileStore(isolated_data_dir / "profile.db")
+    prof_store.set("diet", "Vegan", category="constraints")
+
+    mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=4)
+    past_turn_id = mem_store.log_turn("past-sess", "user", "My dog is named Luna.")
+    mem_store.add_embedding(past_turn_id, [0.0, 1.0, 0.0, 0.0], "past-sess", "My dog is named Luna.")
+
+    mock_emb_provider = AsyncMock()
+    mock_emb_provider.embed_query.return_value = [0.0, 1.0, 0.0, 0.0]
+    mock_emb_provider.embed_documents.return_value = [[0.0, 1.0, 0.0, 0.0]]
+
+    with (
+        patch("riva_agent.api.gateway.config.EMBEDDING_DIMENSION", 4),
+        patch("riva_agent.api.gateway.create_provider") as mock_create,
+        patch("riva_agent.api.gateway.get_embedding_provider", return_value=mock_emb_provider),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "Your dog is named Luna!"
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is my pet's name?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        call_args = mock_provider.chat_async.call_args[0][0]
+        system_content = call_args[0]["content"]
+
+        assert "<relevant_past_context>" in system_content
+        assert "</relevant_past_context>" in system_content
+        assert "My dog is named Luna." in system_content
+        assert "[User Profile & Durable Facts]" in system_content
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_semantic_recall_disabled(client, isolated_data_dir):
+    from common.memory.store import EpisodicStore
+
+    mem_store = EpisodicStore(isolated_data_dir / "memory.db", embedding_dim=4)
+    past_turn_id = mem_store.log_turn("past-sess", "user", "My dog is named Luna.")
+    mem_store.add_embedding(past_turn_id, [0.0, 1.0, 0.0, 0.0], "past-sess", "My dog is named Luna.")
+
+    with (
+        patch("riva_agent.api.gateway.create_provider") as mock_create,
+        patch("riva_agent.api.gateway.config.SEMANTIC_RECALL_ENABLED", False),
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_async.return_value = "I don't know your pet's name."
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [
+                {"role": "user", "content": "What is my pet's name?"},
+            ],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+
+        call_args = mock_provider.chat_async.call_args[0][0]
+        system_content = call_args[0]["content"]
+
+        assert "<relevant_past_context>" not in system_content

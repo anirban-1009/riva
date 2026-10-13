@@ -1,8 +1,11 @@
 import os
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Generator, Optional
+
+from common.memory.store import is_synthetic_context
 
 
 @dataclass
@@ -28,12 +31,34 @@ class ProfileStore:
 
         self._init_db()
 
-    def _get_connection(self) -> sqlite3.Connection:
+    @contextmanager
+    def _get_connection(self) -> Generator[sqlite3.Connection, None, None]:
+        if self.db_path == ":memory:":
+            if not hasattr(self, "_mem_conn") or self._mem_conn is None:
+                self._mem_conn = sqlite3.connect(":memory:")
+                self._mem_conn.row_factory = sqlite3.Row
+            with self._mem_conn:
+                yield self._mem_conn
+            return
+
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         if self.db_path != ":memory:":
             conn.execute("PRAGMA journal_mode=WAL;")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Close persistent in-memory database connection if allocated."""
+        if hasattr(self, "_mem_conn") and self._mem_conn is not None:
+            try:
+                self._mem_conn.close()
+            except Exception:
+                pass
+            self._mem_conn = None
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
@@ -54,6 +79,8 @@ class ProfileStore:
         clean_key = key.strip()
         clean_val = value.strip()
         clean_cat = category.strip().lower()
+        if not clean_key or is_synthetic_context(clean_key) or is_synthetic_context(clean_val):
+            return
         with self._get_connection() as conn:
             conn.execute(
                 """

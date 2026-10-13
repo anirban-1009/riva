@@ -12,6 +12,7 @@ import httpx
 import yaml
 
 from common import get_episodic_store, get_profile_store
+from common.llm.embeddings import create_embedding_provider
 from riva_agent import config
 
 
@@ -194,33 +195,83 @@ def cmd_memory_list(args: argparse.Namespace) -> int:
         return 0
 
     # Fetch recent turns across sessions
-    with store._get_connection() as conn:
-        rows = conn.execute(
-            "SELECT id, session_id, role, content, created_at FROM turns ORDER BY id DESC LIMIT ?;",
-            (args.limit,),
-        ).fetchall()
+    turns = store.list_turns(limit=args.limit)
 
-    if not rows:
+    if not turns:
         print("No conversation history recorded.")
         return 0
 
     print(f"{'ID':<6} {'Role':<10} {'Turn Snippet':<50} {'Created'}")
     print(f"{'-' * 5:<6} {'-' * 9:<10} {'-' * 49:<50} {'-' * 20}")
-    for r in reversed(rows):
-        snippet = r["content"][:48].replace("\n", " ") + ("..." if len(r["content"]) > 48 else "")
-        print(f"{r['id']:<6} {r['role']:<10} {snippet:<50} {r['created_at']}")
+    for t in reversed(turns):
+        snippet = t.content[:48].replace("\n", " ") + ("..." if len(t.content) > 48 else "")
+        print(f"{t.id:<6} {t.role:<10} {snippet:<50} {t.created_at}")
     return 0
 
 
 def cmd_memory_forget(args: argparse.Namespace) -> int:
-    """Delete an episodic turn record by ID."""
-    store = get_episodic_store(config.DATA_DIR / "memory.db")
+    """Delete an episodic turn record and cascaded vector embedding by ID."""
+    store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
     deleted = store.delete_turn(args.id)
     if deleted:
-        print(f"✔ Removed turn ID {args.id} from episodic memory.")
+        print(f"✔ Removed turn ID {args.id} and associated vector embeddings from episodic memory.")
         return 0
     print(f"Turn ID {args.id} not found.", file=sys.stderr)
     return 1
+
+
+def cmd_memory_search(args: argparse.Namespace) -> int:
+    """Semantically search conversation turns using vector embeddings."""
+    import asyncio
+
+    store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
+    if not store._vec_enabled:
+        print("Error: sqlite-vec is not enabled or available in SQLite.", file=sys.stderr)
+        return 1
+
+    query = args.query.strip()
+    if not query:
+        print("Error: Search query cannot be empty.", file=sys.stderr)
+        return 1
+
+    async def _search_async() -> list:
+        provider = create_embedding_provider(
+            config.EMBEDDING_PROVIDER,
+            model=config.EMBEDDING_MODEL,
+            base_url=config.EMBEDDING_BASE_URL,
+            dimension=config.EMBEDDING_DIMENSION,
+        )
+        try:
+            vec = await provider.embed_query(query)
+            if not vec:
+                return []
+            return store.search_similar(
+                vec,
+                top_k=args.limit,
+                distance_threshold=args.threshold,
+                session_id=getattr(args, "session", None),
+            )
+        finally:
+            await provider.close()
+
+    try:
+        matches = asyncio.run(_search_async())
+    except Exception as e:
+        print(f"Error during semantic search: {e}", file=sys.stderr)
+        return 1
+
+    if not matches:
+        print(f"No semantic matches found for '{query}' (threshold: {args.threshold}).")
+        return 0
+
+    print(f"{'ID':<6} {'Score':<8} {'Role':<10} {'Created':<20} {'Matched Text'}")
+    print(f"{'-' * 5:<6} {'-' * 7:<8} {'-' * 9:<10} {'-' * 19:<20} {'-' * 35}")
+    for m in matches:
+        score = max(0.0, 1.0 - m.distance)
+        snippet = m.content[:60].replace("\n", " ") + ("..." if len(m.content) > 60 else "")
+        print(f"{m.turn_id:<6} {score:<8.3f} {m.role:<10} {m.created_at[:19]:<20} {snippet}")
+
+    return 0
 
 
 def cmd_memory_accept(args: argparse.Namespace) -> int:
@@ -251,9 +302,61 @@ def cmd_memory_reject(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_memory_reindex(args: argparse.Namespace) -> int:
+    """Backfill or recompute vector embeddings for conversation turns."""
+    import asyncio
+
+    store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
+    if not store._vec_enabled:
+        print("Error: sqlite-vec is not enabled or available in SQLite.", file=sys.stderr)
+        return 1
+
+    if getattr(args, "force", False):
+        cleared = store.clear_embeddings()
+        print(f"Purged {cleared} existing vector embeddings for full reindex.")
+
+    unindexed = store.get_unindexed_turns(limit=args.limit)
+    if not unindexed:
+        print("All conversation turns are already indexed.")
+        return 0
+
+    print(f"Found {len(unindexed)} unindexed turns. Connecting to embedding provider '{config.EMBEDDING_PROVIDER}'...")
+
+    async def _reindex_async() -> int:
+        provider = create_embedding_provider(
+            config.EMBEDDING_PROVIDER,
+            model=config.EMBEDDING_MODEL,
+            base_url=config.EMBEDDING_BASE_URL,
+            dimension=config.EMBEDDING_DIMENSION,
+        )
+        indexed_count = 0
+
+        batch_size = max(1, args.batch_size)
+        try:
+            for i in range(0, len(unindexed), batch_size):
+                batch = unindexed[i : i + batch_size]
+                texts = [t.content for t in batch]
+                vectors = await provider.embed_documents(texts)
+                for t, vec in zip(batch, vectors):
+                    store.add_embedding(t.id, vec, session_id=t.session_id, content=t.content)
+                    indexed_count += 1
+        finally:
+            await provider.close()
+
+        return indexed_count
+
+    try:
+        indexed = asyncio.run(_reindex_async())
+        print(f"✔ Successfully indexed {indexed} turns into vector store.")
+        return 0
+    except Exception as e:
+        print(f"Error during vector reindexing: {e}", file=sys.stderr)
+        return 1
+
+
 def cmd_storage_status(args: argparse.Namespace) -> int:
     """Show storage telemetry for Riva databases and logs."""
-    mem_store = get_episodic_store(config.DATA_DIR / "memory.db")
+    mem_store = get_episodic_store(config.DATA_DIR / "memory.db", embedding_dim=config.EMBEDDING_DIMENSION)
     prof_store = get_profile_store(config.DATA_DIR / "profile.db")
 
     m_stats = mem_store.get_stats()
@@ -267,19 +370,34 @@ def cmd_storage_status(args: argparse.Namespace) -> int:
             if f.is_file():
                 log_size += f.stat().st_size
 
-    print(f"{'Component':<20} {'Size':<12} {'Details'}")
-    print(f"{'-' * 20:<20} {'-' * 11:<12} {'-' * 30}")
+    print(f"{'Component':<20} {'Size':<14} {'Details'}")
+    print(f"{'-' * 20:<20} {'-' * 14:<14} {'-' * 30}")
 
-    mem_details = f"(Turns: {m_stats['turns']}, Pending: {m_stats['pending']})"
-    print(f"{'Memory DB':<20} {m_stats['file_size'] / 1024:<11.2f} KB {mem_details}")
+    mem_details = (
+        f"(Turns: {m_stats['turns']}, Embeddings: {m_stats.get('embeddings', 0)}, Pending: {m_stats['pending']})"
+    )
+    mem_size_str = f"{m_stats['file_size'] / 1024:.2f} KB"
+    print(f"{'Memory DB':<20} {mem_size_str:<14} {mem_details}")
     if m_stats["wal_size"] > 0:
-        print(f"{'  WAL':<20} {m_stats['wal_size'] / 1024:<11.2f} KB")
+        wal_size_str = f"{m_stats['wal_size'] / 1024:.2f} KB"
+        print(f"{'  WAL':<20} {wal_size_str:<14}")
 
-    print(f"{'Profile DB':<20} {p_stats['file_size'] / 1024:<11.2f} KB (Rows: {p_stats['rows']})")
+    vec_count = m_stats.get("vector_count", m_stats.get("embeddings", 0))
+    emb_dim = m_stats.get("embedding_dim", config.EMBEDDING_DIMENSION)
+    vec_bytes = m_stats.get("vector_bytes", vec_count * emb_dim * 4)
+    backend_status = "sqlite-vec" if m_stats.get("vec_enabled") else "disabled"
+    vec_details = f"(Vectors: {vec_count}, Dim: {emb_dim}, Backend: {backend_status})"
+    vec_size_str = f"{vec_bytes / 1024:.2f} KB"
+    print(f"{'  Vector Index':<20} {vec_size_str:<14} {vec_details}")
+
+    prof_size_str = f"{p_stats['file_size'] / 1024:.2f} KB"
+    print(f"{'Profile DB':<20} {prof_size_str:<14} (Rows: {p_stats['rows']})")
     if p_stats["wal_size"] > 0:
-        print(f"{'  WAL':<20} {p_stats['wal_size'] / 1024:<11.2f} KB")
+        prof_wal_str = f"{p_stats['wal_size'] / 1024:.2f} KB"
+        print(f"{'  WAL':<20} {prof_wal_str:<14}")
 
-    print(f"{'Logs':<20} {log_size / 1024:<11.2f} KB")
+    log_size_str = f"{log_size / 1024:.2f} KB"
+    print(f"{'Logs':<20} {log_size_str:<14}")
 
     return 0
 
@@ -411,26 +529,16 @@ def cmd_session_id(args: argparse.Namespace) -> int:
 def cmd_session_list(args: argparse.Namespace) -> int:
     """List recent conversation sessions from episodic memory."""
     mem_store = get_episodic_store(config.DATA_DIR / "memory.db")
-    with mem_store._get_connection() as conn:
-        rows = conn.execute(
-            """
-            SELECT session_id, count(*) as turn_count, max(created_at) as last_turn
-            FROM turns
-            GROUP BY session_id
-            ORDER BY last_turn DESC
-            LIMIT ?;
-            """,
-            (args.limit,),
-        ).fetchall()
+    sessions = mem_store.list_sessions(limit=args.limit)
 
-    if not rows:
+    if not sessions:
         print("No recorded chat sessions found.")
         return 0
 
     print(f"{'Session ID':<38} {'Turns':<8} {'Last Turn'}")
     print(f"{'-' * 38:<38} {'-' * 7:<8} {'-' * 20}")
-    for r in rows:
-        print(f"{r['session_id']:<38} {r['turn_count']:<8} {r['last_turn']}")
+    for s in sessions:
+        print(f"{s.session_id:<38} {s.turn_count:<8} {s.last_turn}")
     return 0
 
 
@@ -489,9 +597,32 @@ def build_parser() -> argparse.ArgumentParser:
     mem_list.add_argument("--limit", "-n", type=int, default=15, help="Number of turns to show")
     mem_list.set_defaults(func=cmd_memory_list)
 
+    mem_search = memory_sub.add_parser("search", help="Semantically search conversation history")
+    mem_search.add_argument("query", type=str, help="Search query text")
+    mem_search.add_argument("--limit", "-n", type=int, default=5, help="Maximum results to return")
+    mem_search.add_argument(
+        "--threshold",
+        "-t",
+        type=float,
+        default=config.SEMANTIC_DISTANCE_THRESHOLD,
+        help=f"Cosine distance threshold (default: {config.SEMANTIC_DISTANCE_THRESHOLD})",
+    )
+    mem_search.add_argument(
+        "--session",
+        "-s",
+        type=str,
+        default=None,
+        help="Filter to a specific session ID",
+    )
+    mem_search.set_defaults(func=cmd_memory_search)
+
     mem_forget = memory_sub.add_parser("forget", help="Delete an episodic turn record")
     mem_forget.add_argument("id", type=int, help="Turn ID to delete")
     mem_forget.set_defaults(func=cmd_memory_forget)
+
+    mem_forget_turn = memory_sub.add_parser("forget-turn", help="Delete an episodic turn and cascaded vector embedding")
+    mem_forget_turn.add_argument("id", type=int, help="Turn ID to delete")
+    mem_forget_turn.set_defaults(func=cmd_memory_forget)
 
     mem_accept = memory_sub.add_parser("accept", help="Accept a pending candidate memory")
     mem_accept.add_argument("id", type=int, help="Pending memory ID to accept")
@@ -500,6 +631,12 @@ def build_parser() -> argparse.ArgumentParser:
     mem_reject = memory_sub.add_parser("reject", help="Reject a pending candidate memory")
     mem_reject.add_argument("id", type=int, help="Pending memory ID to reject")
     mem_reject.set_defaults(func=cmd_memory_reject)
+
+    mem_reindex = memory_sub.add_parser("reindex", help="Backfill vector embeddings for unindexed conversation turns")
+    mem_reindex.add_argument("--limit", "-n", type=int, default=500, help="Maximum turns to process")
+    mem_reindex.add_argument("--batch-size", type=int, default=32, help="Batch size for embedding calls")
+    mem_reindex.add_argument("--force", action="store_true", help="Clear existing embeddings and reindex all turns")
+    mem_reindex.set_defaults(func=cmd_memory_reindex)
 
     # riva storage ...
     storage_parser = subparsers.add_parser("storage", help="Manage storage lifecycle, compaction, and backups")

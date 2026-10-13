@@ -4,7 +4,7 @@
 
 This document describes the design philosophy, layers, core systems, and interfaces for the Riva Agent platform.
 
-**Status**: `riva-agent/api/gateway.py` and `common/llm/providers.py`/`manager.py` are implemented and described below in detail. `common/memory/`, `common/profile/`, `common/llm/router.py`, and `common/interfaces/plugin.py` are **planned, not yet built** — see [[Product Definition]] §6 for the v1 build order and why the plugin protocol (§5 below) is deferred past v1.
+**Status**: `riva-agent/api/gateway.py`, `common/llm/providers.py`/`manager.py`, `common/memory/` (including M4 Semantic Recall via `sqlite-vec`), `common/profile/`, and `common/llm/embeddings.py` are fully implemented and described below. See [Semantic Memory Architecture](../memory/semantic-memory-architecture.md) for full deep-dive. `common/interfaces/plugin.py` is deferred past v1.
 
 ---
 
@@ -86,7 +86,7 @@ Per [[Product Definition]] §3.2, memory and profile are the product; a Genie is
 A centralized SQLite state store (`~/.riva/memory.db`) that plugins and the assistant gateway interact with instead of maintaining private databases or separate chat histories.
 
 - **`store.py` (`EpisodicStore`)**: Tracks chronological logs of interactions, conversations, recency-window prompt injection for assistant sessions, and staged candidate memories awaiting human review.
-- **Semantic Store**: Knowledge store containing dense vector embeddings and index structures. Deferred past v1 to M4 (using local `sqlite-vec` + local embeddings).
+- **Semantic Store (`sqlite-vec`)**: In-process dense vector index (`vec_turns` virtual table, 768-dim cosine metric) integrated directly within `memory.db` for cross-session semantic recall. Powered by local `nomic-embed-text` embeddings with asynchronous background indexing and syntactic pre-filtering. See [Semantic Memory Architecture](../memory/semantic-memory-architecture.md).
 
 ### Unified Profile (`common/profile/`)
 

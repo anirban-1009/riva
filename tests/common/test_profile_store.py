@@ -83,3 +83,18 @@ def test_profile_store_stats_vacuum_backup(store, tmp_path):
     assert backup_store.get("key1") == "val1"
     assert backup_store.get("key2") == "val2"
     assert len(backup_store.list_all()) == 2
+
+
+def test_profile_store_rejects_synthetic_context(store):
+    openclaw_env = (
+        "OpenClaw runtime context for the immediately preceding user message.\n"
+        "<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n"
+        '{"chat_id": "123"}\n'
+        "<<<END_OPENCLAW_INTERNAL_CONTEXT>>>"
+    )
+    store.set("metadata", openclaw_env, category="facts")
+    assert store.get("metadata") is None
+
+    store.set(openclaw_env, "some_value", category="facts")
+    assert store.get(openclaw_env) is None
+    assert len(store.list_all()) == 0

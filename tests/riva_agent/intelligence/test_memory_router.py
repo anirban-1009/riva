@@ -31,6 +31,10 @@ def router():
         ("Hi, how are you doing today?", False, False),
         ("Can you tell me a joke?", False, False),
         ("Elon Musk is the CEO of Tesla", False, False),
+        # Synthetic Protocol Envelopes
+        ("OpenClaw runtime context for the immediately preceding user message.", False, False),
+        ("<<<BEGIN_OPENCLAW_INTERNAL_CONTEXT>>>\n{}", False, False),
+        ("This context is runtime-generated, not user-authored. Keep private.", False, False),
         # Edge Cases
         ("", False, False),
         ("   ", False, False),

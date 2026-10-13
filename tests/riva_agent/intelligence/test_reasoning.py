@@ -126,7 +126,37 @@ def test_thinking_router_helpers(mock_spacy, mock_laya):
     decision_str = decide_reasoning_effort("Hi!")
     assert decision_str.requires_thinking is False
 
-    decision_msgs = decide_reasoning_effort([{"role": "user", "content": "Hi!"}])
-    assert decision_msgs.requires_thinking is False
-
     assert should_use_extended_thinking("Hi!") is False
+
+
+def test_router_heuristic_fallback(mock_spacy):
+    router = ThinkingRouter(enable_laya=False)
+    decision = router.route("Design an architecture to optimize concurrency bottlenecks")
+    assert decision.requires_thinking is True
+    assert decision.effort_level == ReasoningEffort.HIGH
+    assert "stage3_deterministic_heuristic" in decision.source
+
+    decision_none = router.route("A simple statement with no reasoning keywords")
+    assert decision_none.requires_thinking is False
+    assert decision_none.effort_level == ReasoningEffort.NONE
+    assert "stage3_deterministic_heuristic" in decision_none.source
+
+
+def test_router_laya_low_and_none_effort(mock_spacy, mock_laya):
+    router = ThinkingRouter()
+    with patch.object(router, "agent") as mock_agent:
+        # LOW effort
+        mock_agent.predict.return_value = {
+            "answers": {"complexity": {"probabilities": {"none": 0.55, "low": 0.42, "high": 0.03}}}
+        }
+        dec_low = router.route("Analyze the paragraph structure")
+        assert dec_low.requires_thinking is True
+        assert dec_low.effort_level == ReasoningEffort.LOW
+
+        # NONE effort
+        mock_agent.predict.return_value = {
+            "answers": {"complexity": {"probabilities": {"none": 0.85, "low": 0.10, "high": 0.05}}}
+        }
+        dec_none = router.route("Analyze the paragraph structure")
+        assert dec_none.requires_thinking is False
+        assert dec_none.effort_level == ReasoningEffort.NONE

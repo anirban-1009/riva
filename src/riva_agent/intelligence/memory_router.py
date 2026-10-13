@@ -5,6 +5,7 @@ from typing import Optional
 
 import spacy
 
+from common.memory.store import is_synthetic_context
 from riva_agent import config
 
 
@@ -104,8 +105,8 @@ class MemoryRouter:
         t0 = time.perf_counter()
         clean = query.strip()
 
-        if not clean:
-            return AgentMemoryEvent(query, False, False, 0.0)
+        if not clean or is_synthetic_context(clean):
+            return AgentMemoryEvent(query, False, False, (time.perf_counter() - t0) * 1000)
 
         # Stage 1: Explicit Directives ("Remember that...")
         if self.explicit_memory_re.match(clean):

@@ -17,6 +17,7 @@ dependencies = [
     "spacy>=3.8.0",
     "numpy>=1.26.0",
     "en-core-web-sm",
+    "sqlite-vec>=0.1.9",
 ]
 
 [project.scripts]

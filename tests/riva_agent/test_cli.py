@@ -187,6 +187,8 @@ def test_cli_storage_status(capsys):
     assert "Logs" in captured
     assert "Turns: 1" in captured
     assert "Rows: 1" in captured
+    assert "Vector Index" in captured
+    assert "Vectors: 0" in captured
 
 
 def test_cli_storage_vacuum(capsys):
@@ -375,3 +377,150 @@ def test_cli_session_commands(capsys):
     assert sid1 in out
     assert "sid-2" in out
     assert "2" in out  # turn count for sid1
+
+
+def test_cli_memory_reindex(capsys, monkeypatch):
+    parser = cli.build_parser()
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "mock")
+    monkeypatch.setattr(config, "EMBEDDING_DIMENSION", 768)
+
+    mem_store = EpisodicStore(config.DATA_DIR / "memory.db", embedding_dim=768)
+    mem_store.log_turn("s1", "user", "My MacBook Pro has 36GB unified memory.")
+    mem_store.log_turn("s1", "assistant", "Bavarian breakfast with Weisswurst.")
+    mem_store.log_turn("s1", "user", "ok")
+
+    assert mem_store.get_stats()["embeddings"] == 0
+    # SQL function should_index_turn filters out 'ok', returning only 2 substantive turns
+    assert len(mem_store.get_unindexed_turns()) == 2
+
+    # 1. Normal reindex
+    args = parser.parse_args(["memory", "reindex"])
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Successfully indexed 2 turns into vector store." in out
+    assert mem_store.get_stats()["embeddings"] == 2
+
+    # 2. Reindex when already up to date
+    ret = args.func(args)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "All conversation turns are already indexed." in out
+
+    # 3. Force reindex
+    args_force = parser.parse_args(["memory", "reindex", "--force"])
+    ret = args_force.func(args_force)
+    assert ret == 0
+    out = capsys.readouterr().out
+    assert "Purged 2 existing vector embeddings for full reindex." in out
+    assert "Successfully indexed 2 turns into vector store" in out
+    assert mem_store.get_stats()["embeddings"] == 2
+
+
+def test_cli_memory_forget_turn(capsys):
+    parser = cli.build_parser()
+    mem_store = EpisodicStore(config.DATA_DIR / "memory.db", embedding_dim=768)
+
+    turn_id = mem_store.log_turn("s1", "user", "I run half-marathons.")
+    mem_store.add_embedding(turn_id, [0.1] * 768, "s1", "I run half-marathons.")
+
+    assert mem_store.get_turn(turn_id) is not None
+    assert mem_store.has_embedding(turn_id) is True
+
+    # 1. Forget via forget-turn
+    args = parser.parse_args(["memory", "forget-turn", str(turn_id)])
+    ret = args.func(args)
+    assert ret == 0
+    captured = capsys.readouterr().out
+    assert f"Removed turn ID {turn_id} and associated vector embeddings from episodic memory." in captured
+
+    # Verify cascaded deletion
+    assert mem_store.get_turn(turn_id) is None
+    assert mem_store.has_embedding(turn_id) is False
+
+    # 2. Forget non-existent turn
+    args_missing = parser.parse_args(["memory", "forget-turn", "9999"])
+    ret_missing = args_missing.func(args_missing)
+    assert ret_missing == 1
+    err = capsys.readouterr().err
+    assert "Turn ID 9999 not found." in err
+
+
+def test_cli_memory_search(capsys, monkeypatch):
+    from unittest.mock import AsyncMock
+
+    parser = cli.build_parser()
+    monkeypatch.setattr(config, "EMBEDDING_PROVIDER", "mock")
+    monkeypatch.setattr(config, "EMBEDDING_DIMENSION", 768)
+
+    mem_store = EpisodicStore(config.DATA_DIR / "memory.db", embedding_dim=768)
+    t1 = mem_store.log_turn("session-1", "user", "I live in Berlin and run marathons.")
+    t2 = mem_store.log_turn("session-2", "assistant", "Berlin has great running tracks.")
+    assert t1 > 0 and t2 > 0
+
+    fake_vec1 = [1.0] + [0.0] * 767
+    fake_vec2 = [0.0, 1.0] + [0.0] * 766
+    orthogonal_vec = [0.0, 0.0, 1.0] + [0.0] * 765
+
+    mock_prov = AsyncMock()
+    mock_prov.embed_documents.return_value = [fake_vec1, fake_vec2]
+    mock_prov.embed_query.return_value = fake_vec1
+    mock_prov.close = AsyncMock()
+
+    with patch("riva_agent.cli.create_embedding_provider", return_value=mock_prov):
+        # Reindex to create vectors
+        args_reindex = parser.parse_args(["memory", "reindex"])
+        assert args_reindex.func(args_reindex) == 0
+        capsys.readouterr()  # flush output
+
+        # 1. Search with match
+        args_search = parser.parse_args(["memory", "search", "marathons", "--limit", "5"])
+        ret = args_search.func(args_search)
+        assert ret == 0
+        captured = capsys.readouterr().out
+        assert "Score" in captured
+        assert "Role" in captured
+        assert "Matched Text" in captured
+        assert "Berlin and run marathons" in captured
+
+        # 2. Search with session filter
+        mock_prov.embed_query.return_value = fake_vec2
+        args_sess = parser.parse_args(["memory", "search", "running", "--session", "session-2"])
+        ret = args_sess.func(args_sess)
+        assert ret == 0
+        captured_sess = capsys.readouterr().out
+        assert "Berlin has great running tracks" in captured_sess
+        assert "Berlin and run marathons" not in captured_sess
+
+        # 3. Search with impossible threshold
+        mock_prov.embed_query.return_value = orthogonal_vec
+        args_none = parser.parse_args(["memory", "search", "marathons", "--threshold", "0.38"])
+        ret = args_none.func(args_none)
+        assert ret == 0
+        captured_none = capsys.readouterr().out
+        assert "No semantic matches found for 'marathons'" in captured_none
+
+        # 4. Search with empty query
+        args_empty = parser.parse_args(["memory", "search", "   "])
+        ret = args_empty.func(args_empty)
+        assert ret == 1
+        err = capsys.readouterr().err
+        assert "Search query cannot be empty." in err
+
+    # 5. Search when vector extension is disabled
+    with patch.object(mem_store, "_vec_enabled", False):
+        with patch("riva_agent.cli.get_episodic_store", return_value=mem_store):
+            args_dis = parser.parse_args(["memory", "search", "test"])
+            ret = args_dis.func(args_dis)
+            assert ret == 1
+            assert "sqlite-vec is not enabled" in capsys.readouterr().err
+
+    # 6. Search when embedding provider fails
+    with patch("riva_agent.cli.create_embedding_provider") as mock_err_prov:
+        prov_err = AsyncMock()
+        prov_err.embed_query.side_effect = RuntimeError("Embedding service down")
+        mock_err_prov.return_value = prov_err
+        args_err = parser.parse_args(["memory", "search", "test"])
+        ret = args_err.func(args_err)
+        assert ret == 1
+        assert "Error during semantic search" in capsys.readouterr().err
