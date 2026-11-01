@@ -102,3 +102,45 @@ SEMANTIC_DISTANCE_THRESHOLD: float = float(
         str(_embedding_config.get("threshold", 0.38)),
     )
 )
+
+# Proactive Local Digests (Phase 6 / M5) configuration
+_digest_config: dict = _config.get("digest") or {}
+_digest_signal_config: dict = _digest_config.get("signal") or {}
+
+
+def get_digest_config(cfg: dict | None = None) -> dict:
+    """Resolve digest configuration with environment variable overrides."""
+    if cfg is None:
+        cfg = _config
+    d_cfg = cfg.get("digest") or {}
+    sig_cfg = d_cfg.get("signal") or {}
+
+    out_dir = os.environ.get("RIVA_DIGEST_OUTPUT_DIR", d_cfg.get("output_dir", str(DATA_DIR / "digests")))
+    recipient = os.environ.get("RIVA_DIGEST_SIGNAL_RECIPIENT", sig_cfg.get("recipient"))
+    if recipient:
+        recipient = str(recipient).strip() or None
+    else:
+        recipient = None
+
+    return {
+        "enabled": os.environ.get("RIVA_DIGEST_ENABLED", str(d_cfg.get("enabled", True))).lower()
+        in ("true", "1", "yes"),
+        "output_dir": Path(out_dir).expanduser(),
+        "schedule_time": os.environ.get("RIVA_DIGEST_SCHEDULE_TIME", str(d_cfg.get("schedule_time", "08:00"))),
+        "signal_enabled": os.environ.get("RIVA_DIGEST_SIGNAL_ENABLED", str(sig_cfg.get("enabled", True))).lower()
+        in ("true", "1", "yes"),
+        "signal_recipient": recipient,
+        "signal_send_full": os.environ.get("RIVA_DIGEST_SIGNAL_SEND_FULL", str(sig_cfg.get("send_full", True))).lower()
+        in ("true", "1", "yes"),
+        "macos_fallback": os.environ.get("RIVA_DIGEST_MACOS_FALLBACK", str(d_cfg.get("macos_fallback", True))).lower()
+        in ("true", "1", "yes"),
+    }
+
+
+DIGEST_ENABLED: bool = get_digest_config()["enabled"]
+DIGEST_OUTPUT_DIR: Path = get_digest_config()["output_dir"]
+DIGEST_SCHEDULE_TIME: str = get_digest_config()["schedule_time"]
+DIGEST_SIGNAL_ENABLED: bool = get_digest_config()["signal_enabled"]
+DIGEST_SIGNAL_RECIPIENT: str | None = get_digest_config()["signal_recipient"]
+DIGEST_SIGNAL_SEND_FULL: bool = get_digest_config()["signal_send_full"]
+DIGEST_MACOS_FALLBACK: bool = get_digest_config()["macos_fallback"]

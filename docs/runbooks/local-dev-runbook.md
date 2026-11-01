@@ -348,3 +348,46 @@ uv run riva session id
 uv run riva session list
 uv run riva session list --limit 15
 ```
+
+### 6. Proactive Daily Digests & Scheduling (`riva digest`)
+
+Riva can synthesize proactive daily digests and deliver them directly to your Signal app (via OpenClaw's CLI bridge) with fallback to native macOS notifications, archived in `~/.riva/digests/`.
+
+#### Generate & Inspect Digests
+```bash
+# Preview digest without writing files or dispatching notifications
+uv run riva digest generate --dry-run
+
+# Generate today's briefing and dispatch via Signal (or macOS fallback)
+uv run riva digest generate
+
+# Generate for a specific date without sending notifications
+uv run riva digest generate --date 2026-11-01 --no-notify
+
+# List previously archived digests
+uv run riva digest list
+
+# View a specific digest
+uv run riva digest show 2026-11-01
+```
+
+#### Test Notification Dispatch
+```bash
+# Test native macOS banner notification
+uv run riva digest test-notify --channel macos
+
+# Test Signal dispatch (requires OpenClaw and recipient number)
+uv run riva digest test-notify --channel signal --recipient "+1234567890"
+```
+
+#### Manage Background `launchd` Scheduler
+```bash
+# Check if daily launchd schedule is installed and loaded
+uv run riva digest schedule status
+
+# Install launchd agent for daily execution (e.g. 08:00 AM)
+uv run riva digest schedule install --time "08:00"
+
+# Uninstall and disable launchd agent
+uv run riva digest schedule uninstall
+```

@@ -44,3 +44,14 @@ memory_router_laya: false
 # Directory where local SQLite stores (profile.db, memory.db) reside.
 # Defaults to ~/.riva, or can be set via RIVA_DATA_DIR env var.
 # data_dir: ~/.riva
+
+# Proactive Local Digests (Phase 6 / M5)
+digest:
+  enabled: true
+  output_dir: ~/.riva/digests       # Local directory where markdown digests are archived
+  schedule_time: "08:00"           # Daily execution time (HH:MM) for launchd scheduler
+  signal:
+    enabled: true                  # Dispatch proactive digests via OpenClaw Signal bridge
+    recipient: ""                  # User's E.164 phone number (e.g. "+1234567890") or Signal handle
+    send_full: true                # true: sends formatted digest; false: sends summary notification with file path
+  macos_fallback: true             # Trigger native macOS banner (osascript) if Signal fails or is unconfigured

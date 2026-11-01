@@ -45,6 +45,7 @@ graph TD
 | **Episodic Memory (`memory.db`)** | **Active (v1)** | Records turns; scoped by session; injects recent context. |
 | **Memory Router & Candidate Staging** | **Active (v1)** | Fast syntactic regex (<0.2ms) or in-process Laya MLX SLM to stage candidate facts for review. |
 | **Dual-Mode Gateway (`gateway.py`)** | **Active (v1)** | `pass-through` (clean proxy for OpenClaw) vs `assistant` (injects profile & memory). |
+| **Proactive Local Digests (`digest/`)** | **Active (M5)** | Scheduled daily briefings archived in `~/.riva/digests/`, dispatched to Signal (E2EE) and macOS banner. |
 | **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; plugin protocol and tool execution deferred to post-v1. |
 
 > [!NOTE]
@@ -65,6 +66,7 @@ Riva operates across two distinct modes: **Running (Live Inference)** and **Offl
 | **Edit Profile (`riva profile edit`)** | ✔ YAML editor in terminal | ✔ YAML editor in terminal |
 | **Review Candidate Memories (`riva memory list`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
 | **Storage Diagnostics (`riva storage status`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
+| **Inspect / Run Digests (`riva digest list/generate`)** | ✔ Direct archive read | ✔ Full LLM synthesis & Signal dispatch |
 
 ---
 
