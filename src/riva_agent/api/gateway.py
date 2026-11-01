@@ -25,8 +25,14 @@ from common import (
     should_index_turn,
 )
 from common.llm.embeddings import EmbeddingProvider, create_embedding_provider
-from common.llm.providers import LLMProvider, OllamaProvider, create_provider
+from common.llm.providers import LLMProvider, OllamaProvider, ToolCall, create_provider
+from common.mcp.manager import MCPClientManager
+from common.mcp.models import ToolResult
 from riva_agent import config
+from riva_agent.intelligence.agent_loop import (
+    AgentResponse,
+    run_agent_loop,
+)
 from riva_agent.intelligence.memory_router import route_memory
 from riva_agent.intelligence.reasoning import (
     HybridDecision,
@@ -34,6 +40,7 @@ from riva_agent.intelligence.reasoning import (
     decide_reasoning_effort,
     get_thinking_router,
 )
+from riva_agent.mcp.config import get_mcp_client_manager
 from riva_agent.models.data import (
     AssistantMessage,
     ChatCompletionRequest,
@@ -205,7 +212,23 @@ async def lifespan(app: FastAPI):
             logger.info("ThinkingRouter pre-warmed successfully.")
         except Exception as e:
             logger.warning("Failed to pre-warm ThinkingRouter: %s", e)
+
+    _mcp_manager: MCPClientManager | None = None
+    if config.MCP_ENABLED:
+        try:
+            _mcp_manager = get_mcp_client_manager()
+            await _mcp_manager.connect_all()
+            logger.info("MCP Client Manager initialized (%d tools discovered)", len(_mcp_manager.get_all_tools()))
+        except Exception as e:
+            logger.warning("Failed to initialize MCP Client Manager: %s", e)
+
     yield
+    # Gracefully close MCP clients on shutdown
+    if _mcp_manager:
+        try:
+            await _mcp_manager.close_all()
+        except Exception as e:
+            logger.debug("Error closing MCP manager: %s", e)
     # Gracefully drain pending background indexing tasks on shutdown
     if _background_tasks:
         await asyncio.gather(*_background_tasks, return_exceptions=True)
@@ -326,6 +349,134 @@ async def stream_generator(
     finally:
         if pending is not None:
             pending.cancel()
+
+
+def chunk_text(text: str, chunk_size: int = 16) -> list[str]:
+    """Split text into small streaming chunks while preserving exact content."""
+    if not text:
+        return []
+    chunks: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        next_i = min(i + chunk_size, n)
+        if next_i < n:
+            space_idx = text.rfind(" ", i, min(next_i + 8, n))
+            if space_idx > i:
+                next_i = space_idx + 1
+        chunks.append(text[i:next_i])
+        i = next_i
+    return chunks
+
+
+async def stream_agent_generator(
+    messages: list[dict[str, Any]],
+    provider: LLMProvider,
+    mcp_manager: MCPClientManager,
+    model: str,
+    request_id: str,
+    created_time: int,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+    think: Any = None,
+    on_complete: Callable[[str], None] | None = None,
+) -> AsyncGenerator[str, None]:
+    """Generate server-sent events for agentic ReAct turn with MCP tools."""
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    def _on_tool_call(tc: ToolCall) -> None:
+        queue.put_nowait(f": tool: executing {tc.name}\n\n")
+
+    def _on_tool_result(tr: ToolResult) -> None:
+        queue.put_nowait(f": tool: completed {tr.name}\n\n")
+
+    loop_task: asyncio.Task[AgentResponse] | None = None
+    try:
+        role_chunk = Chunk(
+            id=request_id,
+            created=created_time,
+            model=model,
+            choices=[StreamChoice(delta=Delta(role="assistant"))],
+        )
+        role_dict = asdict(role_chunk)
+        role_dict["choices"][0]["delta"] = {k: v for k, v in role_dict["choices"][0]["delta"].items() if v is not None}
+        yield f"data: {json.dumps(role_dict, ensure_ascii=False)}\n\n"
+
+        loop_task = asyncio.create_task(
+            run_agent_loop(
+                messages,
+                provider,
+                mcp_manager=mcp_manager,
+                max_iterations=config.MCP_MAX_TOOL_ITERATIONS,
+                auto_approve_readonly=config.MCP_AUTO_APPROVE_READONLY,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                think=think,
+                on_tool_call=_on_tool_call,
+                on_tool_result=_on_tool_result,
+            )
+        )
+
+        while not loop_task.done():
+            try:
+                comment = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_INTERVAL_S)
+                yield comment
+            except asyncio.TimeoutError:
+                yield ": keep-alive\n\n"
+
+        while not queue.empty():
+            yield queue.get_nowait()
+
+        agent_res: AgentResponse = await loop_task
+        final_text = agent_res.content
+
+        for token_chunk in chunk_text(final_text):
+            chunk = Chunk(
+                id=request_id,
+                created=created_time,
+                model=model,
+                choices=[StreamChoice(delta=Delta(content=token_chunk))],
+            )
+            chunk_dict = asdict(chunk)
+            chunk_dict["choices"][0]["delta"] = {
+                k: v for k, v in chunk_dict["choices"][0]["delta"].items() if v is not None
+            }
+            yield f"data: {json.dumps(chunk_dict, ensure_ascii=False)}\n\n"
+
+        if on_complete:
+            try:
+                on_complete(final_text)
+            except Exception as e:
+                logger.warning("on_complete callback failed: %s", e)
+
+        done_chunk = Chunk(
+            id=request_id,
+            created=created_time,
+            model=model,
+            choices=[StreamChoice(index=0, finish_reason="stop")],
+        )
+        done_dict = asdict(done_chunk)
+        done_dict["choices"][0]["delta"] = {k: v for k, v in done_dict["choices"][0]["delta"].items() if v is not None}
+        yield f"data: {json.dumps(done_dict, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+    except Exception as e:
+        logger.exception("stream_agent_generator failed request_id=%s model=%s", request_id, model)
+        error_chunk = Chunk(
+            id=request_id,
+            created=created_time,
+            model=model,
+            choices=[
+                StreamChoice(
+                    delta=Delta(content=f"\n[Stream Error: {e}]"),
+                    finish_reason="error",
+                )
+            ],
+        )
+        yield f"data: {json.dumps(asdict(error_chunk), ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+    finally:
+        if loop_task is not None and not loop_task.done():
+            loop_task.cancel()
 
 
 @app.get("/v1/models")
@@ -619,7 +770,33 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
 
         on_complete_cb = _save_assistant_turn
 
+    # Check if Assistant Mode has active MCP tools available
+    mcp_mgr: MCPClientManager | None = None
+    has_mcp_tools = False
+    if is_assistant_mode and config.MCP_ENABLED:
+        try:
+            mcp_mgr = get_mcp_client_manager()
+            has_mcp_tools = bool(mcp_mgr and mcp_mgr.get_all_tools())
+        except Exception as e:
+            logger.warning("Failed to inspect MCP Client Manager: %s", e)
+
     if stream:
+        if has_mcp_tools and mcp_mgr:
+            return StreamingResponse(
+                stream_agent_generator(
+                    messages_payload,
+                    provider,
+                    mcp_mgr,
+                    model,
+                    request_id,
+                    created_time,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    think=effort,
+                    on_complete=on_complete_cb,
+                ),
+                media_type="text/event-stream",
+            )
         return StreamingResponse(
             stream_generator(
                 provider,
@@ -636,9 +813,22 @@ async def chat_completions(request: ChatCompletionRequest) -> Any:
         )
 
     try:
-        content = await provider.chat_async(
-            messages_payload, temperature=temperature, max_tokens=max_tokens, think=effort
-        )
+        if has_mcp_tools and mcp_mgr:
+            agent_res = await run_agent_loop(
+                messages_payload,
+                provider,
+                mcp_manager=mcp_mgr,
+                max_iterations=config.MCP_MAX_TOOL_ITERATIONS,
+                auto_approve_readonly=config.MCP_AUTO_APPROVE_READONLY,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                think=effort,
+            )
+            content = agent_res.content
+        else:
+            content = await provider.chat_async(
+                messages_payload, temperature=temperature, max_tokens=max_tokens, think=effort
+            )
         if on_complete_cb:
             on_complete_cb(content)
 

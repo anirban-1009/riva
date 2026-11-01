@@ -147,9 +147,9 @@ class ProfileStore:
             conn.commit()
             return cur.rowcount > 0
 
-    def format_context(self, max_entries: int = 50) -> str:
+    def format_context(self, category: Optional[str] = None, max_entries: int = 50) -> str:
         """Format stored profile into a clean markdown snippet for system prompt injection."""
-        entries = self.list_all()
+        entries = self.list_all(category=category)
         if not entries:
             return ""
 

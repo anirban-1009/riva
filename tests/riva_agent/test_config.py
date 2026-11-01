@@ -58,3 +58,26 @@ def test_memory_router_laya_config_default():
     with patch.dict("os.environ", {"RIVA_MEMORY_LAYA": "true"}):
         assert _resolve_memory_router_laya({}) is True
         assert _resolve_memory_router_laya({"memory_router_laya": False}) is True
+
+
+def test_load_dotenv(tmp_path):
+    """Verify _load_dotenv parses .env key-value pairs without overriding existing env."""
+    import os
+
+    from riva_agent.config import _load_dotenv
+
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "# Comment line\n"
+        "\n"
+        "RIVA_MCP_API_KEY=my_secret_token\n"
+        'OPENAI_API_KEY="sk-12345"\n'
+        "EXISTING_KEY=new_val\n"
+        "MALFORMED_LINE\n"
+    )
+
+    with patch.dict(os.environ, {"EXISTING_KEY": "original_val"}, clear=True):
+        _load_dotenv(env_file)
+        assert os.environ["RIVA_MCP_API_KEY"] == "my_secret_token"
+        assert os.environ["OPENAI_API_KEY"] == "sk-12345"
+        assert os.environ["EXISTING_KEY"] == "original_val"  # Did not overwrite

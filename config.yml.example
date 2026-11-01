@@ -55,3 +55,37 @@ digest:
     recipient: ""                  # User's E.164 phone number (e.g. "+1234567890") or Signal handle
     send_full: true                # true: sends formatted digest; false: sends summary notification with file path
   macos_fallback: true             # Trigger native macOS banner (osascript) if Signal fails or is unconfigured
+
+# Model Context Protocol (MCP) Integrations (Phase 7 / M6)
+# Manage dynamically via CLI: riva mcp add <name> <command> [args...] / riva mcp remove <name>
+mcp:
+  enabled: true                    # Enable/disable MCP tool integrations globally
+  auto_approve_readonly: true      # Automatically execute read-only queries (searches, data fetches)
+  max_tool_iterations: 5           # Bound on ReAct tool loops per assistant turn
+  timeout_seconds: 30.0            # Execution timeout per tool call in seconds
+  server:
+    # Optional API key for authenticating incoming MCP requests over SSE/HTTP.
+    # Can also be set via RIVA_MCP_API_KEY or RIVA_API_KEY environment variable.
+    # When unset, local authentication is disabled.
+    api_key: null
+  servers:
+    # Example stdio MCP server (e.g. web search via DuckDuckGo):
+    # search:
+    #   transport: stdio
+    #   command: uvx
+    #   args: ["duckduckgo-mcp-server"]
+    #   readonly: true
+    #
+    # Example local filesystem MCP server:
+    # notes:
+    #   transport: stdio
+    #   command: npx
+    #   args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/username/notes"]
+    #   readonly: true
+    #
+    # Example remote SSE MCP server:
+    # custom_service:
+    #   transport: sse
+    #   url: "http://localhost:8000/sse"
+    #   headers:
+    #     Authorization: "Bearer your_token_here"

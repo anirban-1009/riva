@@ -9,6 +9,7 @@ import yaml
 
 from common import get_episodic_store, get_profile_store
 from common.llm.providers import LLMProvider, create_provider
+from common.mcp.manager import MCPClientManager
 from common.memory.store import EpisodicStore
 from common.profile.store import ProfileStore
 from riva_agent import config
@@ -88,6 +89,8 @@ def build_digest_prompt(context: DigestContext) -> list[dict[str, str]]:
         "- Include: 1) Active Priorities & Goals, 2) Recent Context & Momentum, "
         "3) Pending Memory Review (if any candidates exist, mention 'riva memory accept <id>' or 'reject'), "
         "and 4) Actionable Recommendations.\n"
+        "- When external knowledge, tech highlights, or MCP insights are present, synthesize them into recommendations "
+        "and cite sources using markdown links or path references.\n"
         "- Keep it concise, high-signal, and personal. Do not include boilerplate fluff or generic filler."
     )
 
@@ -118,6 +121,11 @@ def build_digest_prompt(context: DigestContext) -> list[dict[str, str]]:
         for p in context.pending_memories:
             context_lines.append(f'- ID {p["id"]}: "{p["fact"]}" (Source: {p.get("source", "")[:100]})')
 
+    if context.external_insights:
+        context_lines.append("\n[External Knowledge & Tech Highlights (MCP)]")
+        for item in context.external_insights:
+            context_lines.append(f"- {item}")
+
     user_prompt = (
         "Here is my current profile and context:\n"
         + "\n".join(context_lines)
@@ -130,6 +138,36 @@ def build_digest_prompt(context: DigestContext) -> list[dict[str, str]]:
     ]
 
 
+async def enrich_context_with_mcp(
+    context: DigestContext,
+    mcp_manager: MCPClientManager | None = None,
+) -> None:
+    """Query LighthouseCoordinator using configured MCP servers to append external tech & knowledge insights."""
+    if not mcp_manager:
+        return
+    try:
+        from lighthouse_genie.coordinator import LighthouseCoordinator
+
+        coordinator = LighthouseCoordinator(mcp_manager=mcp_manager)
+        briefing = await coordinator.gather_briefing_context()
+
+        for trend in briefing.trends:
+            trend_str = f"Trend: {trend.title}"
+            if trend.url:
+                trend_str += f" ({trend.url})"
+            if trend.snippet:
+                trend_str += f" - {trend.snippet[:200]}"
+            context.external_insights.append(trend_str)
+
+        for item in briefing.notion_items:
+            notion_str = f"Notion: {item.title}"
+            if item.url:
+                notion_str += f" ({item.url})"
+            context.external_insights.append(notion_str)
+    except Exception as exc:
+        logger.warning("Failed to enrich digest with MCP insights: %s", exc)
+
+
 async def generate_digest_async(
     context: DigestContext | None = None,
     provider: LLMProvider | None = None,
@@ -137,6 +175,7 @@ async def generate_digest_async(
     dry_run: bool = False,
     profile_store: ProfileStore | None = None,
     episodic_store: EpisodicStore | None = None,
+    mcp_manager: MCPClientManager | None = None,
 ) -> DigestRecord:
     """Asynchronously synthesize a digest and archive it to local Markdown storage."""
     cfg = config_obj or DigestConfig.from_env_or_config()
@@ -145,11 +184,24 @@ async def generate_digest_async(
         episodic_store=episodic_store,
     )
 
+    if mcp_manager is not None:
+        await enrich_context_with_mcp(ctx, mcp_manager)
+
     digest_id = f"{ctx.date}-{uuid.uuid4().hex[:8]}"
     title = f"Daily Briefing: {ctx.date}"
     now_utc = datetime.now(timezone.utc)
 
     if dry_run:
+        insights_section = ""
+        if ctx.external_insights:
+            insights_section = f"\n\n### 🌐 External Insights (MCP) ({len(ctx.external_insights)})\n" + "\n".join(
+                f"- {item}" for item in ctx.external_insights
+            )
+        insights_section = ""
+        if ctx.external_insights:
+            insights_section = f"\n\n### 🌐 External Insights (MCP) ({len(ctx.external_insights)})\n" + "\n".join(
+                f"- {item}" for item in ctx.external_insights
+            )
         content_markdown = (
             f"# 🌅 {title}\n\n"
             f"*(Dry-run preview generated at {now_utc.isoformat()})*\n\n"
@@ -157,6 +209,7 @@ async def generate_digest_async(
             + "\n".join(f"- **{g['key']}**: {g['value']}" for g in ctx.profile_goals)
             + f"\n\n### 📝 Pending Memories ({len(ctx.pending_memories)})\n"
             + "\n".join(f"- [ID {p['id']}] {p['fact']}" for p in ctx.pending_memories)
+            + insights_section
             + "\n\n### 💡 Status\nRiva dry-run digest completed successfully."
         )
     else:
@@ -210,6 +263,7 @@ def generate_digest(
     dry_run: bool = False,
     profile_store: ProfileStore | None = None,
     episodic_store: EpisodicStore | None = None,
+    mcp_manager: MCPClientManager | None = None,
 ) -> DigestRecord:
     """Synchronous wrapper for generate_digest_async."""
     coro = generate_digest_async(
@@ -219,6 +273,7 @@ def generate_digest(
         dry_run=dry_run,
         profile_store=profile_store,
         episodic_store=episodic_store,
+        mcp_manager=mcp_manager,
     )
     try:
         asyncio.get_running_loop()

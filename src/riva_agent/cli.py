@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 import json
 import os
 import shutil
@@ -552,12 +553,23 @@ def cmd_digest_generate(args: argparse.Namespace) -> int:
     target_date = args.date or datetime.now().strftime("%Y-%m-%d")
 
     print(f"Generating Riva digest for {target_date}...")
+    mcp_manager = None
+    if getattr(args, "with_mcp", False):
+        from common.mcp.manager import MCPClientManager
+        from riva_agent.mcp.config import get_mcp_servers
+
+        servers = get_mcp_servers()
+        if servers:
+            mcp_manager = MCPClientManager(servers)
+            asyncio.run(mcp_manager.initialize_all())
+
     try:
         ctx = collect_digest_context(date_str=target_date)
         record = generate_digest(
             context=ctx,
             config_obj=cfg,
             dry_run=args.dry_run,
+            mcp_manager=mcp_manager,
         )
         print(f"✔ Digest created: {record.title}")
         if record.filepath:
@@ -583,6 +595,9 @@ def cmd_digest_generate(args: argparse.Namespace) -> int:
     except Exception as e:
         print(f"Failed to generate digest: {e}", file=sys.stderr)
         return 1
+    finally:
+        if mcp_manager:
+            asyncio.run(mcp_manager.close_all())
 
 
 def cmd_digest_list(args: argparse.Namespace) -> int:
@@ -686,6 +701,253 @@ def cmd_digest_schedule_uninstall(args: argparse.Namespace) -> int:
     icon = "✔" if success else "✖"
     print(f"{icon} {msg}")
     return 0 if success else 1
+
+
+def cmd_mcp_add(args: argparse.Namespace) -> int:
+    """Add a new MCP server to config.yml."""
+    from riva_agent.mcp.config import add_mcp_server
+
+    env_dict = {}
+    if args.env:
+        for item in args.env:
+            if "=" in item:
+                k, v = item.split("=", 1)
+                env_dict[k.strip()] = v.strip()
+            else:
+                env_dict[item.strip()] = os.environ.get(item.strip(), "")
+
+    cmd = args.command
+    cmd_args = list(args.server_args or [])
+
+    if getattr(args, "cmd_and_args", None):
+        if not cmd:
+            cmd = args.cmd_and_args[0]
+            if len(args.cmd_and_args) > 1 and not cmd_args:
+                cmd_args = list(args.cmd_and_args[1:])
+        elif not cmd_args:
+            cmd_args = list(args.cmd_and_args)
+
+    try:
+        server = add_mcp_server(
+            name=args.name,
+            transport=args.transport,
+            command=cmd,
+            args=cmd_args,
+            env=env_dict,
+            url=args.url,
+            readonly=args.readonly,
+            enabled=not args.disabled,
+            timeout=args.timeout,
+        )
+        print(f"✔ Added MCP server '{server.name}' to configuration.")
+        print(f"  Transport: {server.transport}")
+        target = server.command if server.transport == "stdio" else server.url
+        print(f"  Target:    {target}")
+        if server.args:
+            print(f"  Args:      {' '.join(server.args)}")
+        print(f"  Read-Only: {server.readonly}")
+        print(f"  Enabled:   {server.enabled}")
+        return 0
+    except Exception as e:
+        print(f"Error adding MCP server: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_mcp_remove(args: argparse.Namespace) -> int:
+    """Remove an MCP server from config.yml."""
+    from riva_agent.mcp.config import remove_mcp_server
+
+    removed = remove_mcp_server(args.name)
+    if removed:
+        print(f"✔ Removed MCP server '{args.name}' from configuration.")
+        return 0
+    print(f"MCP server '{args.name}' not found in configuration.", file=sys.stderr)
+    return 1
+
+
+def cmd_mcp_list(args: argparse.Namespace) -> int:
+    """List configured MCP servers."""
+    from riva_agent.mcp.config import get_mcp_servers
+
+    servers = get_mcp_servers()
+    if not servers:
+        print("No MCP servers configured.")
+        print("Add one with: riva mcp add <name> --transport <stdio|sse> ...")
+        return 0
+
+    print(f"{'Server':<20} {'Transport':<12} {'Target':<32} {'Read-Only':<10} {'Enabled'}")
+    print(f"{'-' * 19:<20} {'-' * 11:<12} {'-' * 31:<32} {'-' * 9:<10} {'-' * 7}")
+    for s in servers:
+        target = s.command if s.transport == "stdio" else (s.url or "")
+        ro_str = "Yes" if s.readonly else "No"
+        en_str = "Yes" if s.enabled else "No"
+        print(f"{s.name:<20} {s.transport:<12} {target:<32} {ro_str:<10} {en_str}")
+    return 0
+
+
+def cmd_mcp_test(args: argparse.Namespace) -> int:
+    """Test connectivity to configured MCP servers."""
+    from common.mcp.client import MCPClient
+    from riva_agent.mcp.config import get_mcp_servers
+
+    servers = get_mcp_servers()
+    if args.server:
+        servers = [s for s in servers if s.name == args.server]
+        if not servers:
+            print(f"Server '{args.server}' not found in configuration.", file=sys.stderr)
+            return 1
+
+    if not servers:
+        print("No MCP servers configured.")
+        return 0
+
+    async def _test_all():
+        has_failure = False
+        print("Testing MCP server connectivity...")
+        for s in servers:
+            if not s.enabled:
+                print(f"○ {s.name} ({s.transport}): Disabled")
+                continue
+            client = MCPClient(s)
+            try:
+                connected = await client.connect()
+                if connected:
+                    tool_count = len(client.tools)
+                    sfx = "s" if tool_count != 1 else ""
+                    print(f"✔ {s.name} ({s.transport}): Connected ({tool_count} tool{sfx} available)")
+                else:
+                    has_failure = True
+                    print(f"✖ {s.name} ({s.transport}): Connection failed ({client.status.error or 'unknown error'})")
+            finally:
+                await client.close()
+        return 1 if has_failure else 0
+
+    return asyncio.run(_test_all())
+
+
+def cmd_mcp_tools(args: argparse.Namespace) -> int:
+    """List tools exposed by configured MCP servers."""
+    from common.mcp.client import MCPClient
+    from riva_agent.mcp.config import get_mcp_servers
+
+    servers = get_mcp_servers()
+    if args.server:
+        servers = [s for s in servers if s.name == args.server]
+        if not servers:
+            print(f"Server '{args.server}' not found in configuration.", file=sys.stderr)
+            return 1
+
+    if not servers:
+        print("No MCP servers configured.")
+        return 0
+
+    async def _list_tools():
+        total_tools = 0
+        for s in servers:
+            if not s.enabled:
+                continue
+            client = MCPClient(s)
+            try:
+                connected = await client.connect()
+                if not connected:
+                    print(f"Server '{s.name}': Unable to connect ({client.status.error or 'error'}).")
+                    continue
+                tools = list(client.tools.values())
+                total_tools += len(tools)
+                print(f"\n📦 Server: {s.name} ({s.transport}, {len(tools)} tools)")
+                if not tools:
+                    print("  (No tools exposed)")
+                    continue
+                for t in tools:
+                    print(f"  • Tool:        {t.namespaced_name} (original: {t.name})")
+                    if t.description:
+                        print(f"    Description: {t.description}")
+                    if t.parameters and t.parameters.get("properties"):
+                        prop_keys = list(t.parameters["properties"].keys())
+                        print(f"    Parameters:  {', '.join(prop_keys)}")
+            finally:
+                await client.close()
+
+        if total_tools == 0:
+            print("No tools found on configured servers.")
+        return 0
+
+    return asyncio.run(_list_tools())
+
+
+def cmd_mcp_call(args: argparse.Namespace) -> int:
+    """Execute an MCP tool directly for debugging and inspection."""
+    from common.mcp.client import MCPClient
+    from riva_agent.mcp.config import get_mcp_servers
+
+    servers = [s for s in get_mcp_servers() if s.name == args.server]
+    if not servers:
+        print(f"MCP server '{args.server}' not found in configuration.", file=sys.stderr)
+        return 1
+
+    server_cfg = servers[0]
+    raw_args = {}
+    args_json_str = args.args if args.args is not None else getattr(args, "raw_args", "{}")
+    if args_json_str and args_json_str != "{}":
+        try:
+            raw_args = json.loads(args_json_str)
+        except json.JSONDecodeError as e:
+            print(f"Invalid JSON arguments: {e}", file=sys.stderr)
+            return 1
+
+    async def _call():
+        client = MCPClient(server_cfg)
+        try:
+            connected = await client.connect()
+            if not connected:
+                print(f"Failed to connect to '{server_cfg.name}': {client.status.error}", file=sys.stderr)
+                return 1
+
+            result = await client.call_tool(args.tool, raw_args)
+            if result.is_error:
+                print(f"Tool execution error:\n{result.content}", file=sys.stderr)
+                return 1
+            print(result.content)
+            return 0
+        finally:
+            await client.close()
+
+    return asyncio.run(_call())
+
+
+def cmd_mcp_serve(args: argparse.Namespace) -> int:
+    """Start Riva as an MCP Server exposing memory and profile to external clients."""
+    from riva_agent.mcp.server import create_mcp_server, get_mcp_api_key, run_mcp_sse_server
+
+    api_key = get_mcp_api_key()
+    server = create_mcp_server(api_key=api_key)
+
+    if args.transport == "sse":
+        auth_status = " [Auth: X-Riva-API-Key required]" if api_key else " [Auth: disabled]"
+        print(
+            f"Starting Riva MCP Server over SSE on http://{args.host}:{args.port}/sse{auth_status}...",
+            file=sys.stderr,
+        )
+        try:
+            asyncio.run(run_mcp_sse_server(server, host=args.host, port=args.port, api_key=api_key))
+            return 0
+        except KeyboardInterrupt:
+            print("\nShutting down Riva MCP Server.", file=sys.stderr)
+            return 0
+        except Exception as e:
+            print(f"Error running Riva MCP Server (SSE): {e}", file=sys.stderr)
+            return 1
+    else:
+        # stdio transport: informational messages MUST go to stderr so stdin/stdout JSON-RPC stream is not corrupted
+        print("Starting Riva MCP Server over stdio...", file=sys.stderr)
+        try:
+            asyncio.run(server.run_stdio_async())
+            return 0
+        except KeyboardInterrupt:
+            return 0
+        except Exception as e:
+            print(f"Error running Riva MCP Server (stdio): {e}", file=sys.stderr)
+            return 1
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -855,6 +1117,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Preview digest without writing file or sending live notification",
     )
+    dig_gen.add_argument(
+        "--with-mcp",
+        action="store_true",
+        help="Enrich briefing with live data from configured MCP servers (Lighthouse Genie)",
+    )
     dig_gen.set_defaults(func=cmd_digest_generate)
 
     # riva digest list
@@ -891,6 +1158,106 @@ def build_parser() -> argparse.ArgumentParser:
     sched_uninstall = sched_sub.add_parser("uninstall", help="Uninstall launchd agent")
     sched_uninstall.add_argument("--dry-run", action="store_true", help="Simulate without deleting plist")
     sched_uninstall.set_defaults(func=cmd_digest_schedule_uninstall)
+
+    # riva mcp ...
+    mcp_parser = subparsers.add_parser("mcp", help="Manage and inspect Model Context Protocol (MCP) integrations")
+    mcp_sub = mcp_parser.add_subparsers(dest="mcp_action", required=True)
+
+    # riva mcp add <name>
+    mcp_add = mcp_sub.add_parser("add", help="Add or update an MCP server configuration")
+    mcp_add.add_argument("name", type=str, help="Unique identifier name for the MCP server")
+    mcp_add.add_argument(
+        "cmd_and_args",
+        nargs="*",
+        default=[],
+        help="Command and optional arguments for stdio transport (e.g. 'uvx duckduckgo-mcp-server')",
+    )
+    mcp_add.add_argument(
+        "--transport",
+        "-t",
+        type=str,
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport type ('stdio' or 'sse')",
+    )
+    mcp_add.add_argument("--command", "-c", type=str, default=None, help="Command executable for stdio transport")
+    mcp_add.add_argument(
+        "--args",
+        dest="server_args",
+        nargs="+",
+        default=[],
+        help="Arguments to pass to the stdio command (e.g. --args -y @mcp/server)",
+    )
+    mcp_add.add_argument(
+        "--env",
+        "-e",
+        action="append",
+        default=[],
+        help="Environment variables in KEY=VALUE format (can be specified multiple times)",
+    )
+    mcp_add.add_argument("--url", "-u", type=str, default=None, help="Endpoint URL for sse transport")
+    mcp_add.add_argument("--readonly", action="store_true", help="Enforce read-only tool execution")
+    mcp_add.add_argument("--disabled", action="store_true", help="Register server as disabled")
+    mcp_add.add_argument("--timeout", type=float, default=30.0, help="Execution timeout in seconds (default: 30)")
+    mcp_add.set_defaults(func=cmd_mcp_add)
+
+    # riva mcp remove <name>
+    mcp_remove = mcp_sub.add_parser("remove", help="Remove an MCP server from configuration")
+    mcp_remove.add_argument("name", type=str, help="Name of the MCP server to remove")
+    mcp_remove.set_defaults(func=cmd_mcp_remove)
+
+    # riva mcp list
+    mcp_list = mcp_sub.add_parser("list", help="List all configured MCP servers")
+    mcp_list.set_defaults(func=cmd_mcp_list)
+
+    # riva mcp tools [server]
+    mcp_tools = mcp_sub.add_parser("tools", help="List tools exposed by configured MCP servers")
+    mcp_tools.add_argument("server", type=str, nargs="?", default=None, help="Optional server name to filter tools")
+    mcp_tools.set_defaults(func=cmd_mcp_tools)
+
+    # riva mcp test [server]
+    mcp_test = mcp_sub.add_parser("test", help="Test connectivity to configured MCP servers")
+    mcp_test.add_argument("server", type=str, nargs="?", default=None, help="Optional server name to test")
+    mcp_test.set_defaults(func=cmd_mcp_test)
+
+    # riva mcp call <server> <tool> [json_args] [--args '{"key": "val"}']
+    mcp_call = mcp_sub.add_parser("call", help="Manually execute an MCP tool for debugging")
+    mcp_call.add_argument("server", type=str, help="Name of the target MCP server")
+    mcp_call.add_argument("tool", type=str, help="Tool name to execute")
+    mcp_call.add_argument(
+        "raw_args",
+        type=str,
+        nargs="?",
+        default="{}",
+        help='Optional JSON-encoded argument object string (e.g. \'{"query": "foo"}\')',
+    )
+    mcp_call.add_argument("--args", "-a", type=str, default=None, help="JSON-encoded argument object string")
+    mcp_call.set_defaults(func=cmd_mcp_call)
+
+    # riva mcp serve [--transport stdio|sse] [--host 127.0.0.1] [--port 8086]
+    mcp_serve = mcp_sub.add_parser("serve", help="Start Riva as an MCP Server for external clients")
+    mcp_serve.add_argument(
+        "--transport",
+        "-t",
+        type=str,
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport to serve on ('stdio' or 'sse', default: stdio)",
+    )
+    mcp_serve.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host interface for sse transport (default: 127.0.0.1)",
+    )
+    mcp_serve.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=8086,
+        help="Port for sse transport (default: 8086)",
+    )
+    mcp_serve.set_defaults(func=cmd_mcp_serve)
 
     return parser
 

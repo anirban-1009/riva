@@ -9,7 +9,7 @@
 [![Apple Silicon MLX](https://img.shields.io/badge/acceleration-Apple%20Silicon%20MLX-orange.svg)](https://github.com/ml-explore/mlx)
 [![Storage: SQLite WAL](https://img.shields.io/badge/storage-SQLite%20WAL-003B57.svg)](https://www.sqlite.org/)
 [![OpenClaw Compatible](https://img.shields.io/badge/channel-OpenClaw%20%2F%20Signal-green.svg)](https://github.com/openclaw/openclaw)
-[![Tests Passing](https://img.shields.io/badge/tests-66%20passed%20%7C%2082.6%25%20cov-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-205%20passed%20%7C%2085.4%25%20cov-brightgreen.svg)]()
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)]()
 
 <br />
@@ -32,6 +32,7 @@ Riva is an on-device personal AI platform that remembers who you are across days
 - **Multi-Channel Presence**: Seamlessly interact through **Signal** on your phone (routed via OpenClaw), stream in the terminal via `riva ask`, or connect standard OpenAI-compatible web clients.
 - **Inspectable Human-in-the-Loop Trust**: Passive facts are **staged, not committed**. Review proposals with `riva memory list --pending`, accept or reject with one command, or permanently purge turns with `riva memory forget`.
 - **Local Storage Lifecycle**: Built-in `riva storage` suite for database vacuuming, WAL truncation, 30-day retention pruning, 7-day candidate expiry, copytruncate log rotation, and point-in-time disaster recovery snapshots.
+- **Model Context Protocol (MCP)**: Dynamic tool ecosystem support. Seamlessly register, inspect, test, and execute tools from any standard MCP server (e.g. web search, local filesystem, developer tools) via stdio or SSE.
 
 ---
 
@@ -87,6 +88,9 @@ cd riva
 
 # Sync core platform dependencies (excludes heavy ML research notebooks)
 uv sync
+
+# (Optional) Copy sensitive environment template for API keys & MCP auth
+cp .env.example .env
 ```
 
 > [!TIP]
@@ -220,6 +224,100 @@ uv run riva storage prune --turns-days 60 --pending-days 14
 uv run riva storage backup
 ```
 
+### 6. Model Context Protocol (MCP) Integrations (`riva mcp`)
+
+Dynamically register, test, inspect, and invoke tools from external MCP servers via stdio or SSE:
+
+```bash
+# Add a new MCP server (e.g. DuckDuckGo search or local filesystem)
+uv run riva mcp add search uvx duckduckgo-mcp-server
+uv run riva mcp add notes npx -y @modelcontextprotocol/server-filesystem /Users/username/notes --readonly
+
+# List all configured servers
+uv run riva mcp list
+
+# Test connectivity and ping servers
+uv run riva mcp test [server]
+
+# Inspect exposed tools and parameter schemas
+uv run riva mcp tools [server]
+
+# Directly invoke a tool for inspection or debugging
+uv run riva mcp call search search '{"query": "Apple Silicon MLX", "max_results": 2}'
+
+# Start Riva as an MCP Server for external clients (Claude Desktop, Cursor, OpenClaw)
+uv run riva mcp serve                  # default stdio transport
+uv run riva mcp serve --transport sse  # SSE transport on http://127.0.0.1:8086/sse
+
+# Remove an MCP server
+uv run riva mcp remove search
+```
+
+#### Connecting External Assistants to Riva's Memory
+
+Riva can act as an MCP Server exposing your durable profile facts, episodic memory search, and daily digests to external clients (Claude Desktop, Cursor, OpenClaw):
+
+- **Exposed Tools**: `riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`
+- **Exposed Resources**: `riva://profile`, `riva://memory/recent`, `riva://digests/latest`
+- **Authentication**: Set `RIVA_MCP_API_KEY` in `.env`. For SSE, clients pass `X-Riva-API-Key: <token>` (or `Authorization: Bearer <token>`). For stdio, clients pass `RIVA_MCP_API_KEY` in `env`.
+
+##### Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "riva": {
+      "command": "uv",
+      "args": ["run", "--directory", "/absolute/path/to/riva", "riva", "mcp", "serve"],
+      "env": {
+        "RIVA_MCP_API_KEY": "your_mcp_api_key_here"
+      }
+    }
+  }
+}
+```
+
+##### Cursor (`.cursor/mcp.json` or Global Cursor Settings)
+```json
+{
+  "mcpServers": {
+    "riva": {
+      "command": "uv",
+      "args": ["run", "--directory", "/absolute/path/to/riva", "riva", "mcp", "serve"],
+      "env": {
+        "RIVA_MCP_API_KEY": "your_mcp_api_key_here"
+      }
+    }
+  }
+}
+```
+
+##### Remote / SSE Transport (`http://127.0.0.1:8086/sse`)
+```bash
+# Start SSE server with authentication
+uv run riva mcp serve --transport sse --port 8086
+
+# Clients connect to /sse with HTTP header:
+# X-Riva-API-Key: your_mcp_api_key_here
+```
+
+### 7. Proactive Daily Digests (`riva digest`)
+
+Synthesize autonomous morning briefings archived in `~/.riva/digests/` and dispatched via Signal (or macOS banner):
+
+```bash
+# Preview today's briefing in terminal (dry run)
+uv run riva digest generate --dry-run
+
+# Generate today's briefing and dispatch via Signal (or macOS fallback)
+uv run riva digest generate
+
+# Enrich briefing with live external research & Notion notes via Lighthouse Genie
+uv run riva digest generate --with-mcp
+
+# List archived digests
+uv run riva digest list
+```
+
 ---
 
 ## Genie Packages
@@ -241,7 +339,7 @@ riva/
 |---|---|---|
 | **`riva-agent`** | **Shipped (v1)** | Main orchestrator, OpenAI-compatible Gateway, session & intent routing. |
 | **`common`** | **Shipped (v1)** | Shared SQLite storage (`EpisodicStore`, `ProfileStore`), config, and models. |
-| **`lighthouse-genie`** | Planned (M6) | Autonomous daily digests, research paper triage, and reading lists. |
+| **`lighthouse-genie`** | **Shipped (M6)** | Strategic advisor coordinating tech trends, Notion knowledge, and MCP digests. |
 | **`money-genie`** | Post-v1 | Private personal finance and budget assistant. |
 | **`workout-genie`** | Post-v1 | Workout scheduling and fitness tracking. |
 | **`job-genie`** | Post-v1 | Career management and portfolio assistance. |

@@ -1,3 +1,26 @@
+## v1.1.0 (2026-11-01)
+
+### Feat
+
+- ship M6 lighthouse-genie domain coordinator and MCP daily digest integration
+- add API key authentication and SSE transport support to Riva MCP server
+- implement MCP server functionality to expose profile and memory to external clients
+- add tool calling support and agent loop implementation
+- add Model Context Protocol (MCP) client and integration support
+- implement proactive local daily digests with Signal and macOS notification support
+- add semantic search command and vector index telemetry to episodic memory CLI
+- **memory**: implement Phase 4 hybrid context assembly with semantic recall
+- add synthetic context filtering and vector memory reindexing CLI command
+- add sqlite-vec extension support and embedding configuration for semantic memory search
+
+### Refactor
+
+- improve sqlite connection management and add evaluation suite
+
+### Perf
+
+- **docker**: optimize docker build with layer caching and expanded dockerignore
+
 ## v1.0.2 (2026-10-03)
 
 ### Feat

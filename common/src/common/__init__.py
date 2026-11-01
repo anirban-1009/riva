@@ -1,3 +1,4 @@
+from common.interfaces.plugin import GenieCoordinator, PluginContext
 from common.llm.embeddings import (
     EmbeddingError,
     EmbeddingProvider,
@@ -11,10 +12,23 @@ from common.llm.embeddings import (
 )
 from common.llm.manager import LLMManager
 from common.llm.providers import (
+    AssistantTurn,
     LLMProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
+    ToolCall,
     create_provider,
+)
+from common.mcp import (
+    MCPClient,
+    MCPClientManager,
+    ServerConfig,
+    ServerStatus,
+    ServerTransport,
+    ToolDefinition,
+    ToolResult,
+    decode_tool_name,
+    encode_tool_name,
 )
 from common.memory import (
     EpisodicStore,
@@ -31,9 +45,11 @@ from common.profile import ProfileEntry, ProfileStore
 from common.profile.store import get_profile_store
 
 __all__ = [
+    "AssistantTurn",
     "LLMProvider",
     "OllamaProvider",
     "OpenAICompatibleProvider",
+    "ToolCall",
     "create_provider",
     "LLMManager",
     "EmbeddingProvider",
@@ -45,9 +61,20 @@ __all__ = [
     "create_embedding_provider",
     "cosine_similarity",
     "cosine_distance",
+    "GenieCoordinator",
+    "PluginContext",
     "ProfileStore",
     "ProfileEntry",
     "get_profile_store",
+    "MCPClient",
+    "MCPClientManager",
+    "ServerConfig",
+    "ServerStatus",
+    "ServerTransport",
+    "ToolDefinition",
+    "ToolResult",
+    "encode_tool_name",
+    "decode_tool_name",
     "EpisodicStore",
     "Turn",
     "PendingMemory",

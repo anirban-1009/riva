@@ -47,7 +47,9 @@ graph TD
 | **Episodic Memory (`memory.db`)** | **Active (v1)** | Records turns; scoped by session; injects recent context. |
 | **Memory Router & Candidate Staging** | **Active (v1)** | Fast syntactic regex (<0.2ms) or in-process Laya MLX SLM to stage candidate facts for review. |
 | **Dual-Mode Gateway (`gateway.py`)** | **Active (v1)** | `pass-through` (clean proxy for OpenClaw) vs `assistant` (injects profile & memory). |
-| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; plugin protocol and tool execution deferred to post-v1. |
+| **Model Context Protocol (`common/mcp/`)** | **Active (M6)** | Dynamic discovery, management, ReAct tool execution, and MCP server (`riva mcp serve`). |
+| **Lighthouse Genie (`lighthouse-genie`)** | **Active (M6)** | Domain coordinator aggregating tech trends, Notion notes, and MCP digests. |
+| **Domain Genies (`job`, `money`, `workout`)** | **Planned (Post-v1)** | Scaffolded workspace packages for post-v1 domain capabilities. |
 
 > [!NOTE]
 > **Why the Genies aren't wired yet**: As detailed in [[Product Definition]] §6, building the plugin protocol before having a rock-solid, trusted memory foundation leads to premature abstractions. The memory layer was built first; dedicated Genie plugins and tool integrations will be added next.
@@ -67,6 +69,8 @@ Riva operates across two distinct modes: **Running (Live Inference)** and **Offl
 | **Edit Profile (`riva profile edit`)** | ✔ YAML editor in terminal | ✔ YAML editor in terminal |
 | **Review Candidate Memories (`riva memory list`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
 | **Storage Diagnostics (`riva storage status`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
+| **Manage MCP Servers (`riva mcp list / add`)** | ✔ Direct config read/write | ✔ Direct config read/write |
+| **Inspect / Test MCP Tools (`riva mcp tools / test`)** | ✔ Local stdio subprocess | ✔ Local stdio subprocess |
 
 ---
 
@@ -134,6 +138,14 @@ Powered on-device by your configured MLX model (e.g. `mlx-community/gemma-4-E4B-
 
 ---
 
+### E. External Tool Orchestration & Source Citations (MCP)
+Powered by Model Context Protocol (MCP):
+* **Autonomous External Queries**: Riva orchestrates external search and tools (e.g. `duckduckgo-mcp-server`, local filesystem) to answer questions with live or local data.
+* **Mandatory Source Attribution**: Any response relying on external tools automatically includes inline citations and a structured `### Sources` section verifying URLs and paths.
+* **Riva as an MCP Server (`riva mcp serve`)**: Exposes durable profile facts, episodic memory search, and daily digests to external clients (Cursor, Claude Desktop, OpenClaw). Supports `stdio` (default) and `sse` (`--transport sse --port 8086`) with token authentication via `RIVA_MCP_API_KEY` in `.env` (`X-Riva-API-Key` header).
+
+---
+
 ## 4. What You Can Do in Offline / Stopped State
 
 When `mlx_lm.server` and Riva Gateway are stopped, you can still manage your local trust surface and storage:
@@ -170,5 +182,8 @@ uv run riva storage backup
 | **Interactive TUI chat** | Online | `./scripts/start_stack.sh chat` |
 | **View durable profile** | Any | `uv run riva profile show` |
 | **Review staged memories** | Any | `uv run riva memory list --pending` |
+| **Manage MCP servers** | Any | `uv run riva mcp list / add / call` |
+| **Generate daily digest** | Any | `uv run riva digest generate [--with-mcp]` |
+| **Serve memory over MCP** | Standalone | `uv run riva mcp serve [--transport sse]` |
 | **Clean / vacuum storage** | Any | `uv run riva storage vacuum` |
 | **Stop full stack** | Online | `./scripts/start_stack.sh stop` |

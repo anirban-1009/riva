@@ -1,5 +1,7 @@
 # What You Can Ask Riva: Capabilities, Memory & Architecture Roadmap
 
+> Mirrors the [wiki](https://github.com/anirban-1009/riva/wiki/Assistant-Capabilities) — the wiki is the canonical source; update it first.
+
 > Guide to querying Riva, understanding the on-device memory and profile layers, what is active today in v1, and the status of domain Genies.
 
 Riva is an on-device personal AI assistant designed around one core differentiator: **it accumulates a durable model of you over time without sending personal data to hosted cloud providers**.
@@ -10,7 +12,7 @@ Unlike stateless hosted LLMs that treat every session as a stranger, Riva inject
 
 ## 1. What Is Implemented Today vs. Planned Roadmap
 
-Per the product definition ([docs/product-definition.md](product-definition.md) §6), **v1 is strictly focused on memory and profile persistence**: *"v1 is done when Riva remembers me across sessions, and I trust what it remembers."*
+Per the product definition ([[Product Definition]] §6), **v1 is strictly focused on memory and profile persistence**: *"v1 is done when Riva remembers me across sessions, and I trust what it remembers."*
 
 ```mermaid
 graph TD
@@ -45,11 +47,11 @@ graph TD
 | **Episodic Memory (`memory.db`)** | **Active (v1)** | Records turns; scoped by session; injects recent context. |
 | **Memory Router & Candidate Staging** | **Active (v1)** | Fast syntactic regex (<0.2ms) or in-process Laya MLX SLM to stage candidate facts for review. |
 | **Dual-Mode Gateway (`gateway.py`)** | **Active (v1)** | `pass-through` (clean proxy for OpenClaw) vs `assistant` (injects profile & memory). |
-| **Proactive Local Digests (`digest/`)** | **Active (M5)** | Scheduled daily briefings archived in `~/.riva/digests/`, dispatched to Signal (E2EE) and macOS banner. |
-| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; plugin protocol and tool execution deferred to post-v1. |
+| **Model Context Protocol (`common/mcp/`)** | **Active (Phase 1)** | Dynamic discovery, management, and execution of external tools from standard MCP servers. |
+| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; domain capabilities orchestrate standard MCP servers. |
 
 > [!NOTE]
-> **Why the Genies aren't wired yet**: As detailed in [docs/product-definition.md](product-definition.md) §6, building the plugin protocol before having a rock-solid, trusted memory foundation leads to premature abstractions. The memory layer was built first; dedicated Genie plugins and tool integrations will be added next.
+> **Why the Genies aren't wired yet**: As detailed in [[Product Definition]] §6, building the plugin protocol before having a rock-solid, trusted memory foundation leads to premature abstractions. The memory layer was built first; dedicated Genie plugins and tool integrations will be added next.
 
 ---
 
@@ -66,7 +68,8 @@ Riva operates across two distinct modes: **Running (Live Inference)** and **Offl
 | **Edit Profile (`riva profile edit`)** | ✔ YAML editor in terminal | ✔ YAML editor in terminal |
 | **Review Candidate Memories (`riva memory list`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
 | **Storage Diagnostics (`riva storage status`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
-| **Inspect / Run Digests (`riva digest list/generate`)** | ✔ Direct archive read | ✔ Full LLM synthesis & Signal dispatch |
+| **Manage MCP Servers (`riva mcp list / add`)** | ✔ Direct config read/write | ✔ Direct config read/write |
+| **Inspect / Test MCP Tools (`riva mcp tools / test`)** | ✔ Local stdio subprocess | ✔ Local stdio subprocess |
 
 ---
 

@@ -808,3 +808,151 @@ async def test_chat_completions_semantic_recall_disabled(client, isolated_data_d
         system_content = call_args[0]["content"]
 
         assert "<relevant_past_context>" not in system_content
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_assistant_mode_with_mcp_tool_loop_and_citations(client, isolated_data_dir):
+    from common.llm.providers import AssistantTurn, ToolCall
+    from common.mcp.models import ToolDefinition, ToolResult
+
+    mock_tool = ToolDefinition(
+        server="search",
+        name="ddg",
+        namespaced_name="search__ddg",
+        description="Search DuckDuckGo",
+        parameters={"type": "object", "properties": {"query": {"type": "string"}}},
+    )
+
+    mock_mcp_mgr = MagicMock()
+    mock_mcp_mgr.get_all_tools.return_value = [mock_tool]
+    mock_mcp_mgr.get_openai_tools.return_value = [mock_tool.to_openai_tool()]
+
+    async def mock_call_tool(name, args):
+        assert name == "search__ddg"
+        assert args == {"query": "weather Munich"}
+        return ToolResult(
+            name=name,
+            content="1. Munich Weather\nURL: https://weather.example.com/munich\nCurrently 21°C and sunny.",
+            is_error=False,
+        )
+
+    mock_mcp_mgr.call_tool = AsyncMock(side_effect=mock_call_tool)
+
+    turn_1 = AssistantTurn(
+        content=None,
+        tool_calls=[ToolCall(id="call_99", name="search__ddg", arguments={"query": "weather Munich"})],
+    )
+    turn_2 = AssistantTurn(
+        content="It is sunny and 21°C in Munich [Munich Weather](https://weather.example.com/munich).",
+        tool_calls=[],
+    )
+
+    with (
+        patch("riva_agent.api.gateway.get_mcp_client_manager", return_value=mock_mcp_mgr),
+        patch("riva_agent.api.gateway.create_provider") as mock_create,
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_turn_async = AsyncMock(side_effect=[turn_1, turn_2])
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "What is the weather in Munich?"}],
+            "stream": False,
+        }
+
+        response = await client.post("/v1/chat/completions", json=payload)
+        assert response.status_code == 200
+        data = response.json()
+
+        content = data["choices"][0]["message"]["content"]
+        assert "sunny and 21°C in Munich" in content
+        assert "### Sources" in content
+        assert "[Munich Weather](https://weather.example.com/munich)" in content
+
+        # Verify turn was logged in episodic store with the synthesized response
+        mem_store = EpisodicStore(isolated_data_dir / "memory.db")
+        turns = mem_store.list_turns()
+        assert len(turns) == 2
+        assert turns[1].role == "user"
+        assert turns[0].role == "assistant"
+        assert "### Sources" in turns[0].content
+
+
+@pytest.mark.asyncio
+async def test_chat_completions_assistant_mode_with_mcp_streaming(client, isolated_data_dir):
+    import json
+
+    from common.llm.providers import AssistantTurn, ToolCall
+    from common.mcp.models import ToolDefinition, ToolResult
+
+    mock_tool = ToolDefinition(
+        server="search",
+        name="ddg",
+        namespaced_name="search__ddg",
+        description="Search DuckDuckGo",
+        parameters={"type": "object", "properties": {"query": {"type": "string"}}},
+    )
+
+    mock_mcp_mgr = MagicMock()
+    mock_mcp_mgr.get_all_tools.return_value = [mock_tool]
+    mock_mcp_mgr.get_openai_tools.return_value = [mock_tool.to_openai_tool()]
+
+    async def mock_call_tool(name, args):
+        return ToolResult(
+            name=name,
+            content="1. Munich Weather\nURL: https://weather.example.com/munich\nCurrently 21°C and sunny.",
+            is_error=False,
+        )
+
+    mock_mcp_mgr.call_tool = AsyncMock(side_effect=mock_call_tool)
+
+    turn_1 = AssistantTurn(
+        content=None,
+        tool_calls=[ToolCall(id="call_stream_1", name="search__ddg", arguments={"query": "weather Munich"})],
+    )
+    turn_2 = AssistantTurn(
+        content="It is sunny and 21°C in Munich [Munich Weather](https://weather.example.com/munich).",
+        tool_calls=[],
+    )
+
+    with (
+        patch("riva_agent.api.gateway.get_mcp_client_manager", return_value=mock_mcp_mgr),
+        patch("riva_agent.api.gateway.create_provider") as mock_create,
+    ):
+        mock_provider = AsyncMock()
+        mock_provider.get_capabilities.return_value = []
+        mock_provider.chat_turn_async = AsyncMock(side_effect=[turn_1, turn_2])
+        mock_create.return_value = mock_provider
+
+        payload = {
+            "model": "riva",
+            "messages": [{"role": "user", "content": "What is the weather in Munich?"}],
+            "stream": True,
+        }
+
+        async with client.stream("POST", "/v1/chat/completions", json=payload) as response:
+            assert response.status_code == 200
+            lines = []
+            async for line in response.aiter_lines():
+                if line:
+                    lines.append(line)
+
+            # Check that SSE role was emitted
+            assert any('"role": "assistant"' in line for line in lines)
+            # Check tool execution keepalive comment
+            assert any(": tool: executing search__ddg" in line for line in lines)
+            # Check content chunks
+            streamed_content = ""
+            for line in lines:
+                if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                    parsed = json.loads(line[6:])
+                    delta = parsed["choices"][0].get("delta", {})
+                    if "content" in delta:
+                        streamed_content += delta["content"]
+
+            assert "sunny and 21°C in Munich" in streamed_content
+            assert "### Sources" in streamed_content
+            assert "[Munich Weather](https://weather.example.com/munich)" in streamed_content
+            assert any("[DONE]" in line for line in lines)

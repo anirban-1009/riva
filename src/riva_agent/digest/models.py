@@ -59,6 +59,7 @@ class DigestContext:
     recent_turns: list[dict[str, Any]] = field(default_factory=list)
     pending_memories: list[dict[str, Any]] = field(default_factory=list)
     additional_notes: list[str] = field(default_factory=list)
+    external_insights: list[str] = field(default_factory=list)
 
 
 @dataclass
