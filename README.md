@@ -242,8 +242,40 @@ uv run riva mcp tools [server]
 # Directly invoke a tool for inspection or debugging
 uv run riva mcp call search search '{"query": "Apple Silicon MLX", "max_results": 2}'
 
+# Start Riva as an MCP Server for external clients (Claude Desktop, Cursor, OpenClaw)
+uv run riva mcp serve                  # default stdio transport
+uv run riva mcp serve --transport sse  # SSE transport on http://127.0.0.1:8086/sse
+
 # Remove an MCP server
 uv run riva mcp remove search
+```
+
+#### Connecting External Assistants to Riva's Memory
+
+Riva can act as an MCP Server exposing your durable profile facts, episodic memory search, and daily digests to any MCP-compatible client.
+
+##### Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "riva": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/riva", "riva", "mcp", "serve"]
+    }
+  }
+}
+```
+
+##### Cursor (`.cursor/mcp.json` or Global Cursor Settings)
+```json
+{
+  "mcpServers": {
+    "riva": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/riva", "riva", "mcp", "serve"]
+    }
+  }
+}
 ```
 
 ---

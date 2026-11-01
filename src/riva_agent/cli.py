@@ -901,6 +901,36 @@ def cmd_mcp_call(args: argparse.Namespace) -> int:
     return asyncio.run(_call())
 
 
+def cmd_mcp_serve(args: argparse.Namespace) -> int:
+    """Start Riva as an MCP Server exposing memory and profile to external clients."""
+    from riva_agent.mcp.server import create_mcp_server
+
+    server = create_mcp_server()
+
+    if args.transport == "sse":
+        print(f"Starting Riva MCP Server over SSE on http://{args.host}:{args.port}/sse...", file=sys.stderr)
+        try:
+            asyncio.run(server.run_sse_async(host=args.host, port=args.port))
+            return 0
+        except KeyboardInterrupt:
+            print("\nShutting down Riva MCP Server.", file=sys.stderr)
+            return 0
+        except Exception as e:
+            print(f"Error running Riva MCP Server (SSE): {e}", file=sys.stderr)
+            return 1
+    else:
+        # stdio transport: informational messages MUST go to stderr so stdin/stdout JSON-RPC stream is not corrupted
+        print("Starting Riva MCP Server over stdio...", file=sys.stderr)
+        try:
+            asyncio.run(server.run_stdio_async())
+            return 0
+        except KeyboardInterrupt:
+            return 0
+        except Exception as e:
+            print(f"Error running Riva MCP Server (stdio): {e}", file=sys.stderr)
+            return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="riva",
@@ -1179,6 +1209,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mcp_call.add_argument("--args", "-a", type=str, default=None, help="JSON-encoded argument object string")
     mcp_call.set_defaults(func=cmd_mcp_call)
+
+    # riva mcp serve [--transport stdio|sse] [--host 127.0.0.1] [--port 8086]
+    mcp_serve = mcp_sub.add_parser("serve", help="Start Riva as an MCP Server for external clients")
+    mcp_serve.add_argument(
+        "--transport",
+        "-t",
+        type=str,
+        choices=["stdio", "sse"],
+        default="stdio",
+        help="Transport to serve on ('stdio' or 'sse', default: stdio)",
+    )
+    mcp_serve.add_argument(
+        "--host",
+        type=str,
+        default="127.0.0.1",
+        help="Host interface for sse transport (default: 127.0.0.1)",
+    )
+    mcp_serve.add_argument(
+        "--port",
+        "-p",
+        type=int,
+        default=8086,
+        help="Port for sse transport (default: 8086)",
+    )
+    mcp_serve.set_defaults(func=cmd_mcp_serve)
 
     return parser
 

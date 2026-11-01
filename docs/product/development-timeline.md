@@ -188,7 +188,7 @@ gantt
 ---
 
 ### Phase 7: Model Context Protocol (MCP) Integration & Lighthouse Genie (M6)
-**Status**: **IN PROGRESS** (Phase 1 Infrastructure & CLI Management Shipped)
+**Status**: **IN PROGRESS** (Phases 1–4 Completed & Verified)
 **Estimated Duration**: ~7–10 Days
 **Primary Focus**: Standardizing tool and capability interoperability with the Model Context Protocol (MCP) in place of bespoke plugin interfaces, and delivering Lighthouse Genie.
 
@@ -198,15 +198,20 @@ gantt
   - Programmatic config management in `riva_agent/mcp/config.py`.
   - Full CLI management suite: `riva mcp add`, `remove`, `list`, `test`, `tools`, `call`.
   - Self-contained test server fixtures with 100% test pass.
-- **Phase 2: Provider Tool-Calling & Agentic ReAct Loop**: **IN PROGRESS**
+- **Phase 2: Provider Tool-Calling & Agentic ReAct Loop**: **COMPLETED**
   - Wire function/tool calling into `LLMProvider` (`OllamaProvider` and `OpenAICompatibleProvider`).
   - Implement bounded multi-turn agent execution loop (`max_tool_iterations: 5`) with read-only auto-approval and mutating confirmation gate.
-- **Phase 3: Dual-Mode Gateway Integration & Streaming Safety**:
-  - SSE keep-alive tool execution events to prevent client timeouts.
+  - Implement mandatory Source Citation Enforcement with inline markdown links and structured `### Sources` section.
+- **Phase 3: Dual-Mode Gateway Integration & Streaming Safety**: **COMPLETED**
+  - Assistant Mode (`model="riva"`) dispatches through `run_agent_loop` and `stream_agent_generator`.
+  - SSE keep-alive tool execution comments (`: tool: executing ...`, `: keep-alive`) to prevent client timeouts.
+  - Pass-through mode (`model != "riva"`) maintains 100% byte-for-byte proxies with 0ms MCP overhead.
   - Memory integrity defense: tagging raw tool payloads with `is_synthetic_context` to avoid `sqlite-vec` vector bloat.
-- **Phase 4: Riva as an MCP Server**:
-  - Expose `profile.db` facts and `memory.db` episodic recall as standard MCP tools and resources (`riva://profile`, `riva://memory/recent`) for Claude Desktop, Cursor, and OpenClaw.
-- **Phase 5: Lighthouse Genie & Proactive Digest Integration**:
+- **Phase 4: Riva as an MCP Server (`riva mcp serve`)**: **COMPLETED**
+  - Expose `profile.db` facts, `memory.db` episodic recall, and daily digests as standard MCP tools (`riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`) and resources (`riva://profile`, `riva://memory/recent`, `riva://digests/latest`).
+  - Built CLI command `riva mcp serve [--transport stdio|sse]` with stdio wire protection.
+  - Client connection guides for Claude Desktop, Cursor, and OpenClaw.
+- **Phase 5: Lighthouse Genie & Proactive Digest Integration**: **NEXT**
   - Connect external MCP servers (Notion, GitHub, DuckDuckGo search) to enrich morning briefings in `generator.py`.
 
 ---
@@ -221,4 +226,4 @@ gantt
 | **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **COMPLETED** |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | **COMPLETED** |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + Signal via OpenClaw) | Week 5–6 (Days 29–33) | **COMPLETED** |
-| **Phase 7** | **M6** | Model Context Protocol (MCP) Integration & Lighthouse Genie | Week 6–7 (Days 34–43) | **IN PROGRESS** (Phase 1 Shipped) |
+| **Phase 7** | **M6** | Model Context Protocol (MCP) Integration & Lighthouse Genie | Week 6–7 (Days 34–43) | **IN PROGRESS** (Phases 1–4 Completed) |

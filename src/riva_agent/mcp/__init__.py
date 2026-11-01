@@ -14,6 +14,7 @@ from riva_agent.mcp.config import (
     load_mcp_config,
     remove_mcp_server,
 )
+from riva_agent.mcp.server import create_mcp_server
 
 __all__ = [
     "MCPClient",
@@ -24,6 +25,7 @@ __all__ = [
     "ToolDefinition",
     "ToolResult",
     "add_mcp_server",
+    "create_mcp_server",
     "get_mcp_client_manager",
     "get_mcp_servers",
     "load_mcp_config",

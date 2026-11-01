@@ -271,19 +271,30 @@ class EpisodicStore:
                 created_at=str(row["created_at"]),
             )
 
-    def get_recent_turns(self, session_id: str, limit: int = 10) -> list[Turn]:
-        """Fetch the most recent turns for a session in chronological order."""
+    def get_recent_turns(self, session_id: Optional[str] = None, limit: int = 10) -> list[Turn]:
+        """Fetch the most recent turns for a session (or across all sessions) in chronological order."""
         with self._get_connection() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, session_id, role, content, created_at
-                FROM turns
-                WHERE session_id = ?
-                ORDER BY id DESC
-                LIMIT ?;
-                """,
-                (session_id.strip(), limit),
-            ).fetchall()
+            if session_id:
+                rows = conn.execute(
+                    """
+                    SELECT id, session_id, role, content, created_at
+                    FROM turns
+                    WHERE session_id = ?
+                    ORDER BY id DESC
+                    LIMIT ?;
+                    """,
+                    (session_id.strip(), limit),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT id, session_id, role, content, created_at
+                    FROM turns
+                    ORDER BY id DESC
+                    LIMIT ?;
+                    """,
+                    (limit,),
+                ).fetchall()
 
             turns = [
                 Turn(
