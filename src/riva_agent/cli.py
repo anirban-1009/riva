@@ -542,6 +542,152 @@ def cmd_session_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_digest_generate(args: argparse.Namespace) -> int:
+    """Generate a personal daily digest and optionally dispatch notifications."""
+    from riva_agent.digest.dispatcher import dispatch_digest_notifications
+    from riva_agent.digest.generator import collect_digest_context, generate_digest
+    from riva_agent.digest.models import DigestConfig
+
+    cfg = DigestConfig.from_env_or_config()
+    target_date = args.date or datetime.now().strftime("%Y-%m-%d")
+
+    print(f"Generating Riva digest for {target_date}...")
+    try:
+        ctx = collect_digest_context(date_str=target_date)
+        record = generate_digest(
+            context=ctx,
+            config_obj=cfg,
+            dry_run=args.dry_run,
+        )
+        print(f"✔ Digest created: {record.title}")
+        if record.filepath:
+            print(f"  Archive: {record.filepath}")
+
+        if args.dry_run:
+            print("\n--- Preview ---\n")
+            print(record.content_markdown)
+            print("\n---------------\n")
+
+        if not args.no_notify:
+            results = dispatch_digest_notifications(
+                record,
+                config_obj=cfg,
+                dry_run=args.dry_run,
+                force_channel=args.channel,
+            )
+            for res in results:
+                status_icon = "✔" if res.success else "✖"
+                print(f"  {status_icon} [{res.channel.upper()}] {res.message}")
+
+        return 0
+    except Exception as e:
+        print(f"Failed to generate digest: {e}", file=sys.stderr)
+        return 1
+
+
+def cmd_digest_list(args: argparse.Namespace) -> int:
+    """List archived markdown digests."""
+    from riva_agent.digest.generator import list_digests
+
+    digests = list_digests(limit=args.limit)
+    if not digests:
+        print(f"No archived digests found in {config.DIGEST_OUTPUT_DIR}.")
+        return 0
+
+    print(f"{'Date':<12} {'ID':<25} {'Title':<30} {'Filepath'}")
+    print(f"{'-' * 11:<12} {'-' * 24:<25} {'-' * 29:<30} {'-' * 35}")
+    for d in digests:
+        path_str = str(d.filepath) if d.filepath else "-"
+        print(f"{d.date:<12} {d.id:<25} {d.title[:28]:<30} {path_str}")
+    return 0
+
+
+def cmd_digest_show(args: argparse.Namespace) -> int:
+    """Show content of an archived digest."""
+    from riva_agent.digest.generator import read_digest
+
+    record = read_digest(args.identifier)
+    if not record:
+        print(f"Digest '{args.identifier}' not found in {config.DIGEST_OUTPUT_DIR}.", file=sys.stderr)
+        return 1
+
+    print(f"# {record.title} (ID: {record.id}, Date: {record.date})")
+    if record.filepath:
+        print(f"Source: {record.filepath}\n")
+    print(record.content_markdown)
+    return 0
+
+
+def cmd_digest_test_notify(args: argparse.Namespace) -> int:
+    """Test notification dispatch to Signal or native macOS banner."""
+    from riva_agent.digest.dispatcher import send_macos_notification, send_signal_message
+
+    channel = args.channel or ("signal" if config.DIGEST_SIGNAL_ENABLED and config.DIGEST_SIGNAL_RECIPIENT else "macos")
+    recipient = args.recipient or config.DIGEST_SIGNAL_RECIPIENT
+
+    test_msg = (
+        f"🌅 Riva test notification ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): "
+        f"Proactive dispatch bridge is operational."
+    )
+
+    if channel == "signal":
+        if not recipient:
+            print(
+                "Error: No recipient specified. Use --recipient or configure digest.signal.recipient.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Testing Signal dispatch to {recipient}...")
+        res = send_signal_message(recipient, test_msg, dry_run=args.dry_run)
+        icon = "✔" if res.success else "✖"
+        print(f"{icon} [SIGNAL] {res.message}")
+        return 0 if res.success else 1
+    elif channel == "macos":
+        print("Testing native macOS banner notification...")
+        res = send_macos_notification("Riva Test Notification", test_msg, dry_run=args.dry_run)
+        icon = "✔" if res.success else "✖"
+        print(f"{icon} [MACOS] {res.message}")
+        return 0 if res.success else 1
+    else:
+        print(f"Unknown channel '{channel}'. Supported: 'signal', 'macos'.", file=sys.stderr)
+        return 1
+
+
+def cmd_digest_schedule_install(args: argparse.Namespace) -> int:
+    """Install macOS launchd agent for scheduled daily digest execution."""
+    from riva_agent.digest.scheduler import install_launchd_schedule
+
+    time_val = args.time or config.DIGEST_SCHEDULE_TIME
+    success, msg = install_launchd_schedule(schedule_time=time_val, dry_run=args.dry_run)
+    icon = "✔" if success else "✖"
+    print(f"{icon} {msg}")
+    return 0 if success else 1
+
+
+def cmd_digest_schedule_status(args: argparse.Namespace) -> int:
+    """Show status of macOS launchd digest agent."""
+    from riva_agent.digest.scheduler import get_launchd_schedule_status
+
+    status = get_launchd_schedule_status()
+    print("Riva Proactive Digest Schedule Status:")
+    print(f"  Installed:       {'Yes' if status['installed'] else 'No'}")
+    print(f"  Loaded:          {'Yes' if status['loaded'] else 'No'}")
+    print(f"  Scheduled Time:  {status.get('schedule_time') or 'Not configured'}")
+    print(f"  Plist Path:      {status.get('plist_path')}")
+    print(f"  Details:         {status.get('detail')}")
+    return 0
+
+
+def cmd_digest_schedule_uninstall(args: argparse.Namespace) -> int:
+    """Uninstall macOS launchd agent for daily digest."""
+    from riva_agent.digest.scheduler import uninstall_launchd_schedule
+
+    success, msg = uninstall_launchd_schedule(dry_run=args.dry_run)
+    icon = "✔" if success else "✖"
+    print(f"{icon} {msg}")
+    return 0 if success else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="riva",
@@ -686,6 +832,65 @@ def build_parser() -> argparse.ArgumentParser:
     sess_list = session_sub.add_parser("list", help="List recent chat sessions")
     sess_list.add_argument("--limit", "-n", type=int, default=15, help="Number of sessions to show")
     sess_list.set_defaults(func=cmd_session_list)
+
+    # riva digest ...
+    digest_parser = subparsers.add_parser("digest", help="Generate and manage proactive daily digests")
+    digest_sub = digest_parser.add_subparsers(dest="digest_action", required=True)
+
+    # riva digest generate
+    dig_gen = digest_sub.add_parser("generate", help="Generate a personal digest now")
+    dig_gen.add_argument("--date", type=str, default=None, help="Date for the digest (YYYY-MM-DD)")
+    dig_gen.add_argument(
+        "--channel",
+        type=str,
+        choices=["signal", "macos"],
+        default=None,
+        help="Force specific notification channel",
+    )
+    dig_gen.add_argument(
+        "--no-notify", action="store_true", help="Generate and save digest without sending notifications"
+    )
+    dig_gen.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview digest without writing file or sending live notification",
+    )
+    dig_gen.set_defaults(func=cmd_digest_generate)
+
+    # riva digest list
+    dig_list = digest_sub.add_parser("list", help="List archived digests")
+    dig_list.add_argument("--limit", "-n", type=int, default=15, help="Number of digests to show")
+    dig_list.set_defaults(func=cmd_digest_list)
+
+    # riva digest show <id>
+    dig_show = digest_sub.add_parser("show", help="Show content of a specific digest")
+    dig_show.add_argument("identifier", type=str, help="Digest date, filename, or ID")
+    dig_show.set_defaults(func=cmd_digest_show)
+
+    # riva digest test-notify
+    dig_test = digest_sub.add_parser("test-notify", help="Test notification dispatch (Signal or macOS)")
+    dig_test.add_argument("--channel", type=str, choices=["signal", "macos"], default=None, help="Channel to test")
+    dig_test.add_argument("--recipient", type=str, default=None, help="Signal recipient (e.g. +1234567890)")
+    dig_test.add_argument("--dry-run", action="store_true", help="Simulate without actually sending")
+    dig_test.set_defaults(func=cmd_digest_test_notify)
+
+    # riva digest schedule ...
+    dig_sched = digest_sub.add_parser("schedule", help="Manage macOS launchd background schedule")
+    sched_sub = dig_sched.add_subparsers(dest="schedule_action", required=True)
+
+    sched_install = sched_sub.add_parser("install", help="Install launchd agent for daily scheduled run")
+    sched_install.add_argument(
+        "--time", "-t", type=str, default=None, help="Daily time in HH:MM format (default: 08:00)"
+    )
+    sched_install.add_argument("--dry-run", action="store_true", help="Preview plist without writing")
+    sched_install.set_defaults(func=cmd_digest_schedule_install)
+
+    sched_status = sched_sub.add_parser("status", help="Check launchd agent status")
+    sched_status.set_defaults(func=cmd_digest_schedule_status)
+
+    sched_uninstall = sched_sub.add_parser("uninstall", help="Uninstall launchd agent")
+    sched_uninstall.add_argument("--dry-run", action="store_true", help="Simulate without deleting plist")
+    sched_uninstall.set_defaults(func=cmd_digest_schedule_uninstall)
 
     return parser
 
