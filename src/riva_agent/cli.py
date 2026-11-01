@@ -903,14 +903,19 @@ def cmd_mcp_call(args: argparse.Namespace) -> int:
 
 def cmd_mcp_serve(args: argparse.Namespace) -> int:
     """Start Riva as an MCP Server exposing memory and profile to external clients."""
-    from riva_agent.mcp.server import create_mcp_server
+    from riva_agent.mcp.server import create_mcp_server, get_mcp_api_key, run_mcp_sse_server
 
-    server = create_mcp_server()
+    api_key = get_mcp_api_key()
+    server = create_mcp_server(api_key=api_key)
 
     if args.transport == "sse":
-        print(f"Starting Riva MCP Server over SSE on http://{args.host}:{args.port}/sse...", file=sys.stderr)
+        auth_status = " [Auth: X-Riva-API-Key required]" if api_key else " [Auth: disabled]"
+        print(
+            f"Starting Riva MCP Server over SSE on http://{args.host}:{args.port}/sse{auth_status}...",
+            file=sys.stderr,
+        )
         try:
-            asyncio.run(server.run_sse_async(host=args.host, port=args.port))
+            asyncio.run(run_mcp_sse_server(server, host=args.host, port=args.port, api_key=api_key))
             return 0
         except KeyboardInterrupt:
             print("\nShutting down Riva MCP Server.", file=sys.stderr)

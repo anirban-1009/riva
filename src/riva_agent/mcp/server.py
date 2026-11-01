@@ -3,12 +3,20 @@
 Exposes Riva's persistent profile facts, episodic memory search, and proactive digests
 as standard Model Context Protocol (MCP) tools and resources for external assistants
 (Cursor, Claude Desktop, OpenClaw, Zed).
+Includes header-based API key authentication for exposed endpoints and tool invocations.
 """
 
+import hmac
 import logging
+import os
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
+from mcp.server.transport_security import TransportSecuritySettings
+from starlette.responses import Response
 
 from common import get_episodic_store, get_profile_store
 from common.llm.embeddings import create_embedding_provider
@@ -17,14 +25,123 @@ from riva_agent import config
 logger = logging.getLogger(__name__)
 
 
+def get_mcp_api_key() -> str | None:
+    """Retrieve the configured MCP API key from environment variable or configuration."""
+    key = os.environ.get("RIVA_MCP_API_KEY") or os.environ.get("RIVA_API_KEY") or config.MCP_API_KEY
+    if key and str(key).strip():
+        return str(key).strip()
+    return None
+
+
+def verify_api_key(
+    headers: Mapping[str | bytes, str | bytes] | None = None,
+    token: str | None = None,
+    expected_key: str | None = None,
+) -> bool:
+    """Validate incoming API key against the expected secret.
+
+    If expected_key is None or empty, authentication is considered disabled (returns True).
+    If expected_key is set, extracts and validates:
+    1. Explicit token argument
+    2. 'X-Riva-API-Key' header
+    3. 'Authorization: Bearer <key>' header
+    """
+    secret = expected_key if expected_key is not None else get_mcp_api_key()
+    if not secret:
+        return True
+
+    provided_token: str | None = None
+
+    if token is not None:
+        provided_token = token.strip()
+    elif headers:
+        clean_headers: dict[str, str] = {}
+        for k, v in headers.items():
+            k_str = k.decode("utf-8").lower() if isinstance(k, bytes) else str(k).lower()
+            v_str = v.decode("utf-8") if isinstance(v, bytes) else str(v)
+            clean_headers[k_str] = v_str
+
+        if "x-riva-api-key" in clean_headers:
+            provided_token = clean_headers["x-riva-api-key"].strip()
+        elif "authorization" in clean_headers:
+            auth_val = clean_headers["authorization"].strip()
+            if auth_val.lower().startswith("bearer "):
+                provided_token = auth_val[7:].strip()
+            else:
+                provided_token = auth_val
+
+    if not provided_token:
+        return False
+
+    return hmac.compare_digest(provided_token, secret)
+
+
+class AuthMiddleware:
+    """ASGI middleware enforcing header-based API key authentication for MCP endpoints."""
+
+    def __init__(self, app: Any, api_key: str | None = None) -> None:
+        self.app = app
+        self.api_key = api_key
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and self.api_key:
+            headers = dict(scope.get("headers", []))
+            if not verify_api_key(headers=headers, expected_key=self.api_key):
+                response = Response(
+                    "Unauthorized (401): Missing or invalid API key. "
+                    "Please provide a valid key via the 'X-Riva-API-Key' or 'Authorization: Bearer <token>' header.\n",
+                    status_code=401,
+                    media_type="text/plain",
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+def create_mcp_app(
+    server: MCPServer,
+    api_key: str | None = None,
+    host: str = "127.0.0.1",
+) -> Any:
+    """Create the Starlette ASGI application for SSE transport wrapped with AuthMiddleware."""
+    starlette_app = server.sse_app(
+        host=host,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+    resolved_key = api_key if api_key is not None else get_mcp_api_key()
+    return AuthMiddleware(starlette_app, api_key=resolved_key)
+
+
+async def run_mcp_sse_server(
+    server: MCPServer,
+    host: str = "127.0.0.1",
+    port: int = 8086,
+    api_key: str | None = None,
+) -> None:
+    """Run the MCP server over SSE with header-based authentication."""
+    import uvicorn
+
+    app = create_mcp_app(server, api_key=api_key, host=host)
+    srv_config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level=server.settings.log_level.lower(),
+    )
+    server_runner = uvicorn.Server(srv_config)
+    await server_runner.serve()
+
+
 def create_mcp_server(
     data_dir: Path | None = None,
     digest_dir: Path | None = None,
     name: str = "riva",
+    api_key: str | None = None,
 ) -> MCPServer:
     """Create and configure the Riva MCP Server instance."""
     resolved_data_dir = data_dir or config.DATA_DIR
     resolved_digest_dir = digest_dir or config.DIGEST_OUTPUT_DIR
+    resolved_api_key = api_key if api_key is not None else get_mcp_api_key()
 
     server = MCPServer(
         name=name,
@@ -41,6 +158,31 @@ def create_mcp_server(
         embedding_dim=config.EMBEDDING_DIMENSION,
     )
 
+    def _check_tool_auth(auth_token: str | None = None, ctx: Context | None = None) -> str | None:
+        """Validate tool execution against configured API key."""
+        if not resolved_api_key:
+            return None
+        if auth_token is not None:
+            if not verify_api_key(token=auth_token, expected_key=resolved_api_key):
+                return (
+                    "Error: Unauthorized: Invalid API key provided in 'auth_token'. "
+                    "Please verify your key matches the server's RIVA_MCP_API_KEY environment variable."
+                )
+            return None
+        if ctx is not None:
+            try:
+                req_headers = ctx.headers
+                if req_headers is not None:
+                    if not verify_api_key(headers=req_headers, expected_key=resolved_api_key):
+                        return (
+                            "Error: Unauthorized: Missing or invalid API key. "
+                            "Please provide a valid key via the 'X-Riva-API-Key' header or "
+                            "'Authorization: Bearer <token>' matching RIVA_MCP_API_KEY."
+                        )
+            except Exception:
+                pass
+        return None
+
     # -------------------------------------------------------------------------
     # Tools
     # -------------------------------------------------------------------------
@@ -49,8 +191,16 @@ def create_mcp_server(
         name="riva_get_profile",
         description="Retrieve user profile facts, constraints, and preferences stored in Riva's durable profile store.",
     )
-    def get_profile(category: str | None = None) -> str:
+    def get_profile(
+        category: str | None = None,
+        auth_token: str | None = None,
+        ctx: Context = None,
+    ) -> str:
         """Retrieve profile facts optionally filtered by category."""
+        auth_err = _check_tool_auth(auth_token=auth_token, ctx=ctx)
+        if auth_err:
+            return auth_err
+
         clean_cat = category.strip() if category else None
         context = profile_store.format_context(category=clean_cat)
         if not context.strip():
@@ -61,8 +211,18 @@ def create_mcp_server(
         name="riva_set_profile_fact",
         description="Save or update an explicit durable fact, constraint, or preference into the user's Riva profile.",
     )
-    def set_profile_fact(key: str, value: str, category: str = "facts") -> str:
+    def set_profile_fact(
+        key: str,
+        value: str,
+        category: str = "facts",
+        auth_token: str | None = None,
+        ctx: Context = None,
+    ) -> str:
         """Store a fact into Riva's profile."""
+        auth_err = _check_tool_auth(auth_token=auth_token, ctx=ctx)
+        if auth_err:
+            return auth_err
+
         clean_key = key.strip()
         clean_val = value.strip()
         clean_cat = (category or "facts").strip().lower()
@@ -75,8 +235,17 @@ def create_mcp_server(
         name="riva_search_memory",
         description="Search past conversations in Riva's episodic and semantic memory store.",
     )
-    async def search_memory(query: str, limit: int = 5) -> str:
+    async def search_memory(
+        query: str,
+        limit: int = 5,
+        auth_token: str | None = None,
+        ctx: Context = None,
+    ) -> str:
         """Search past conversations using semantic similarity with keyword fallback."""
+        auth_err = _check_tool_auth(auth_token=auth_token, ctx=ctx)
+        if auth_err:
+            return auth_err
+
         clean_query = query.strip()
         if not clean_query:
             return "Error: query must not be empty."
@@ -121,8 +290,18 @@ def create_mcp_server(
         name="riva_log_turn",
         description="Record a user or assistant conversation turn into Riva's episodic memory.",
     )
-    def log_turn(session_id: str, role: str, content: str) -> str:
+    def log_turn(
+        session_id: str,
+        role: str,
+        content: str,
+        auth_token: str | None = None,
+        ctx: Context = None,
+    ) -> str:
         """Record a turn into memory.db."""
+        auth_err = _check_tool_auth(auth_token=auth_token, ctx=ctx)
+        if auth_err:
+            return auth_err
+
         clean_sid = session_id.strip() or "default"
         clean_role = role.strip().lower()
         clean_content = content.strip()
@@ -138,8 +317,17 @@ def create_mcp_server(
         name="riva_get_recent_turns",
         description="Retrieve the most recent conversation turns from Riva's episodic memory.",
     )
-    def get_recent_turns(session_id: str | None = None, limit: int = 10) -> str:
+    def get_recent_turns(
+        session_id: str | None = None,
+        limit: int = 10,
+        auth_token: str | None = None,
+        ctx: Context = None,
+    ) -> str:
         """Retrieve recent conversation turns."""
+        auth_err = _check_tool_auth(auth_token=auth_token, ctx=ctx)
+        if auth_err:
+            return auth_err
+
         clean_sid = session_id.strip() if session_id else None
         turns = episodic_store.get_recent_turns(clean_sid, limit=limit)
         if not turns:

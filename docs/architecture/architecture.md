@@ -172,7 +172,9 @@ Rather than inventing a proprietary tool protocol, Riva natively connects to sta
    - Genie packages (starting with `lighthouse-genie` in M6) act as domain coordinators that consume standard MCP servers (Notion, GitHub, DuckDuckGo search) rather than implementing custom tool protocols.
 
 5. **Riva as an MCP Server (Provider)**:
-   - Exposes Riva's durable profile facts (`profile.db`) and episodic memory (`memory.db`) as MCP tools and resources (`riva://profile`, `riva://memory/recent`) to external agents (Cursor, Claude Desktop, OpenClaw).
+   - Exposes durable profile facts, episodic memory, and daily digests as standard MCP tools (`riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`) and resources (`riva://profile`, `riva://memory/recent`, `riva://digests/latest`).
+   - Serves over `stdio` (default for Claude Desktop/Cursor) or `sse` (HTTP streaming on port `8086`).
+   - Optional API key authentication via `RIVA_MCP_API_KEY` in `.env` (or `mcp.server.api_key` in `config.yml`). When configured, SSE connections require `X-Riva-API-Key` or `Authorization: Bearer <key>` headers, returning HTTP 401 on missing or invalid tokens.
 
 ---
 

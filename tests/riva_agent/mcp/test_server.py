@@ -190,17 +190,24 @@ def test_cmd_mcp_serve_stdio(monkeypatch):
 def test_cmd_mcp_serve_sse(monkeypatch):
     from riva_agent.cli import cmd_mcp_serve
 
-    mock_server = MagicMock()
-    mock_server.run_sse_async = AsyncMock()
+    monkeypatch.delenv("RIVA_MCP_API_KEY", raising=False)
+    monkeypatch.delenv("RIVA_API_KEY", raising=False)
+    monkeypatch.setattr("riva_agent.mcp.server.get_mcp_api_key", lambda: None)
 
-    with patch("riva_agent.mcp.server.create_mcp_server", return_value=mock_server):
+    mock_server = MagicMock()
+    mock_run = AsyncMock()
+
+    with (
+        patch("riva_agent.mcp.server.create_mcp_server", return_value=mock_server),
+        patch("riva_agent.mcp.server.run_mcp_sse_server", mock_run),
+    ):
         args = MagicMock()
         args.transport = "sse"
         args.host = "127.0.0.1"
         args.port = 8086
         exit_code = cmd_mcp_serve(args)
         assert exit_code == 0
-        mock_server.run_sse_async.assert_called_once_with(host="127.0.0.1", port=8086)
+        mock_run.assert_called_once_with(mock_server, host="127.0.0.1", port=8086, api_key=None)
 
 
 def test_cmd_mcp_serve_error(monkeypatch):
@@ -214,3 +221,80 @@ def test_cmd_mcp_serve_error(monkeypatch):
         args.transport = "stdio"
         exit_code = cmd_mcp_serve(args)
         assert exit_code == 1
+
+
+def test_verify_api_key(monkeypatch):
+    from riva_agent.mcp.server import verify_api_key
+
+    # Permissive when no expected key configured
+    monkeypatch.delenv("RIVA_MCP_API_KEY", raising=False)
+    monkeypatch.delenv("RIVA_API_KEY", raising=False)
+    monkeypatch.setattr("riva_agent.mcp.server.get_mcp_api_key", lambda: None)
+    assert verify_api_key(expected_key=None) is True
+    assert verify_api_key(expected_key="") is True
+
+    # When key configured
+    secret = "secret-passphrase-123"
+    assert verify_api_key(token="secret-passphrase-123", expected_key=secret) is True
+    assert verify_api_key(token="wrong-token", expected_key=secret) is False
+    assert verify_api_key(token=None, expected_key=secret) is False
+
+    # Header: X-Riva-API-Key
+    assert verify_api_key(headers={"X-Riva-API-Key": "secret-passphrase-123"}, expected_key=secret) is True
+    assert verify_api_key(headers={"x-riva-api-key": "secret-passphrase-123"}, expected_key=secret) is True
+    assert verify_api_key(headers={"X-Riva-API-Key": "wrong"}, expected_key=secret) is False
+
+    # Header: Authorization Bearer
+    assert verify_api_key(headers={"Authorization": "Bearer secret-passphrase-123"}, expected_key=secret) is True
+    assert verify_api_key(headers={"authorization": "Bearer secret-passphrase-123"}, expected_key=secret) is True
+    assert verify_api_key(headers={"Authorization": "Bearer wrong"}, expected_key=secret) is False
+    assert verify_api_key(headers={"Authorization": "Basic 1234"}, expected_key=secret) is False
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_asgi(isolated_env):
+    from httpx import ASGITransport, AsyncClient
+
+    from riva_agent.mcp.server import create_mcp_app, create_mcp_server
+
+    data_dir, digest_dir = isolated_env
+    server = create_mcp_server(data_dir=data_dir, digest_dir=digest_dir, api_key="test-api-key")
+    app = create_mcp_app(server, api_key="test-api-key")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://127.0.0.1:8086") as client:
+        # 1. No header -> 401
+        res1 = await client.get("/sse")
+        assert res1.status_code == 401
+        assert "Unauthorized" in res1.text
+
+        # 2. Wrong key -> 401
+        res2 = await client.get("/sse", headers={"X-Riva-API-Key": "wrong"})
+        assert res2.status_code == 401
+
+        # 3. Valid key -> Authenticated (bypasses 401 to endpoint)
+        res3 = await client.post("/messages/", headers={"X-Riva-API-Key": "test-api-key"}, json={})
+        assert res3.status_code != 401
+
+        # 4. Valid Authorization Bearer header -> Authenticated
+        res4 = await client.post("/messages/", headers={"Authorization": "Bearer test-api-key"}, json={})
+        assert res4.status_code != 401
+
+
+@pytest.mark.asyncio
+async def test_tool_authentication(isolated_env):
+    data_dir, digest_dir = isolated_env
+    server = create_mcp_server(data_dir=data_dir, digest_dir=digest_dir, api_key="tool-secret-key")
+
+    # 1. Calling tool with invalid auth_token returns error
+    res_bad = await server.call_tool(
+        "riva_get_profile",
+        {"category": "facts", "auth_token": "wrong-token"},
+    )
+    assert "Error: Unauthorized: Invalid API key" in res_bad.content[0].text
+
+    # 2. Calling tool with valid auth_token succeeds
+    res_good = await server.call_tool(
+        "riva_get_profile",
+        {"category": "facts", "auth_token": "tool-secret-key"},
+    )
+    assert "No profile facts found" in res_good.content[0].text

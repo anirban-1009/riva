@@ -14,6 +14,7 @@ quickly, not read start to end.
 |---|---|---|
 | `8085` | `riva-agent` gateway (`/v1/chat/completions`, etc.) | `uv run` — manual, not a service |
 | `8081` | `mlx_lm.server` (current inference backend) | `nohup` — manual, not a service |
+| `8086` | `riva mcp serve` (MCP SSE transport) | `uv run` — manual / background (`--transport sse`) |
 | `11434` | Ollama (only relevant if `config.yml`'s `provider` is switched back to `ollama`) | `Ollama.app` — auto-starts, a real macOS service |
 
 `mlx_lm.server` doesn't survive a reboot or crash on its own — if the
@@ -25,13 +26,6 @@ it), so no action needed there unless it's been quit manually.
 
 ### Automated startup (Recommended)
 
-Use the dev stack orchestration script, which handles environment validation, dependency installation, model setup, and service orchestration:
-
-- **Platform validation**: Verifies macOS on Apple Silicon (`arm64`). If run on an Intel Mac or Linux, it alerts you to configure `provider: ollama` instead.
-- **Automatic `mlx-lm` bootstrap**: If `mlx_lm.server` is not found in `PATH`, the script prompts to install it automatically via `uv tool install mlx-lm` (or `pip install --user mlx-lm`).
-- **Interactive model selection**: Reads `model:` from `config.yml`. If unconfigured, interactively prompts to select from recommended pre-quantized MLX models (Gemma 4, Qwen 2.5, Llama 3.1) or specify a custom Hugging Face model, with the option to persist the choice to `config.yml`.
-- **Hugging Face cache & download detection**: Detects whether the model is already downloaded in `~/.cache/huggingface/hub/`. If missing, it notifies you that weights are downloading and expands the startup timeout budget to 10 minutes (with process crash detection).
-- **Provider-aware**: Automatically skips MLX startup if `provider: ollama` is active in `config.yml` and verifies Ollama on port 11434.
 Use the dev stack orchestration script, which handles environment validation, dependency installation, model setup, and service orchestration:
 
 - **Platform validation**: Verifies macOS on Apple Silicon (`arm64`). If run on an Intel Mac or Linux, it alerts you to configure `provider: ollama` instead.
@@ -391,3 +385,32 @@ uv run riva digest schedule install --time "08:00"
 # Uninstall and disable launchd agent
 uv run riva digest schedule uninstall
 ```
+
+### 7. Model Context Protocol (MCP) Management & Server (`riva mcp`)
+
+Manage external tool integrations and expose Riva's local memory to external AI clients (Claude Desktop, Cursor):
+
+```bash
+# Register an external MCP server
+uv run riva mcp add search uvx duckduckgo-mcp-server
+
+# List configured servers and inspect discovered tools
+uv run riva mcp list
+uv run riva mcp tools search
+
+# Test connection and tool execution
+uv run riva mcp test search
+uv run riva mcp call search search '{"query": "Apple Silicon MLX", "max_results": 2}'
+
+# Run Riva as an MCP Server (stdio transport for desktop clients)
+uv run riva mcp serve
+
+# Run Riva as an MCP SSE Server (HTTP streaming on port 8086)
+uv run riva mcp serve --transport sse --port 8086
+```
+
+#### Authentication & Environment Secrets
+Sensitive tokens and server authentication keys belong in `.env` (copy from `.env.example`):
+- `RIVA_MCP_API_KEY`: Required token for incoming MCP connections when authentication is active.
+  - SSE transport: Clients provide header `X-Riva-API-Key: <token>` or `Authorization: Bearer <token>`.
+  - Stdio transport: Clients pass `RIVA_MCP_API_KEY` in environment.

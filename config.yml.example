@@ -63,6 +63,11 @@ mcp:
   auto_approve_readonly: true      # Automatically execute read-only queries (searches, data fetches)
   max_tool_iterations: 5           # Bound on ReAct tool loops per assistant turn
   timeout_seconds: 30.0            # Execution timeout per tool call in seconds
+  server:
+    # Optional API key for authenticating incoming MCP requests over SSE/HTTP.
+    # Can also be set via RIVA_MCP_API_KEY or RIVA_API_KEY environment variable.
+    # When unset, local authentication is disabled.
+    api_key: null
   servers:
     # Example stdio MCP server (e.g. web search via DuckDuckGo):
     # search:

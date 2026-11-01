@@ -88,6 +88,9 @@ cd riva
 
 # Sync core platform dependencies (excludes heavy ML research notebooks)
 uv sync
+
+# (Optional) Copy sensitive environment template for API keys & MCP auth
+cp .env.example .env
 ```
 
 > [!TIP]
@@ -252,7 +255,11 @@ uv run riva mcp remove search
 
 #### Connecting External Assistants to Riva's Memory
 
-Riva can act as an MCP Server exposing your durable profile facts, episodic memory search, and daily digests to any MCP-compatible client.
+Riva can act as an MCP Server exposing your durable profile facts, episodic memory search, and daily digests to external clients (Claude Desktop, Cursor, OpenClaw):
+
+- **Exposed Tools**: `riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`
+- **Exposed Resources**: `riva://profile`, `riva://memory/recent`, `riva://digests/latest`
+- **Authentication**: Set `RIVA_MCP_API_KEY` in `.env`. For SSE, clients pass `X-Riva-API-Key: <token>` (or `Authorization: Bearer <token>`). For stdio, clients pass `RIVA_MCP_API_KEY` in `env`.
 
 ##### Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
 ```json
@@ -260,7 +267,10 @@ Riva can act as an MCP Server exposing your durable profile facts, episodic memo
   "mcpServers": {
     "riva": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/riva", "riva", "mcp", "serve"]
+      "args": ["run", "--directory", "/absolute/path/to/riva", "riva", "mcp", "serve"],
+      "env": {
+        "RIVA_MCP_API_KEY": "your_mcp_api_key_here"
+      }
     }
   }
 }
@@ -272,10 +282,22 @@ Riva can act as an MCP Server exposing your durable profile facts, episodic memo
   "mcpServers": {
     "riva": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/riva", "riva", "mcp", "serve"]
+      "args": ["run", "--directory", "/absolute/path/to/riva", "riva", "mcp", "serve"],
+      "env": {
+        "RIVA_MCP_API_KEY": "your_mcp_api_key_here"
+      }
     }
   }
 }
+```
+
+##### Remote / SSE Transport (`http://127.0.0.1:8086/sse`)
+```bash
+# Start SSE server with authentication
+uv run riva mcp serve --transport sse --port 8086
+
+# Clients connect to /sse with HTTP header:
+# X-Riva-API-Key: your_mcp_api_key_here
 ```
 
 ---

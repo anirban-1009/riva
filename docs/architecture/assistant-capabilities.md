@@ -141,7 +141,7 @@ Powered on-device by your configured MLX model (e.g. `mlx-community/gemma-4-E4B-
 Powered by Model Context Protocol (MCP):
 * **Autonomous External Queries**: Riva orchestrates external search and tools (e.g. `duckduckgo-mcp-server`, local filesystem) to answer questions with live or local data.
 * **Mandatory Source Attribution**: Any response relying on external tools automatically includes inline citations and a structured `### Sources` section verifying URLs and paths.
-* **Riva as an MCP Server (`riva mcp serve`)**: Expose Riva's durable profile facts, episodic memory search, and daily digests as standard tools and resources for external IDE assistants (Cursor, Claude Desktop, OpenClaw).
+* **Riva as an MCP Server (`riva mcp serve`)**: Exposes durable profile facts, episodic memory search, and daily digests to external clients (Cursor, Claude Desktop, OpenClaw). Supports `stdio` (default) and `sse` (`--transport sse --port 8086`) with token authentication via `RIVA_MCP_API_KEY` in `.env` (`X-Riva-API-Key` header).
 
 ---
 
@@ -182,6 +182,6 @@ uv run riva storage backup
 | **View durable profile** | Any | `uv run riva profile show` |
 | **Review staged memories** | Any | `uv run riva memory list --pending` |
 | **Manage MCP servers** | Any | `uv run riva mcp list / add / call` |
-| **Serve memory over MCP** | Standalone | `uv run riva mcp serve` |
+| **Serve memory over MCP** | Standalone | `uv run riva mcp serve [--transport sse]` |
 | **Clean / vacuum storage** | Any | `uv run riva storage vacuum` |
 | **Stop full stack** | Online | `./scripts/start_stack.sh stop` |
