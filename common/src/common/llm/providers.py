@@ -1,6 +1,8 @@
 import json
 import os
 import time
+import uuid
+from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, ClassVar, Protocol, runtime_checkable
 
 import httpx
@@ -18,6 +20,29 @@ _DEFAULT_KEEP_ALIVE = "30m"
 _CAPABILITIES_TTL_S = 300.0
 
 
+@dataclass
+class ToolCall:
+    """Represents a tool invocation requested by an LLM."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any]
+    type: str = "function"
+
+
+@dataclass
+class AssistantTurn:
+    """Structured assistant response containing text and/or tool call requests."""
+
+    content: str | None = None
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    raw: dict[str, Any] | None = None
+
+    @property
+    def has_tool_calls(self) -> bool:
+        return bool(self.tool_calls)
+
+
 @runtime_checkable
 class LLMProvider(Protocol):
     """Common interface every backend (Ollama, OpenAI-compatible, ...) implements.
@@ -33,17 +58,31 @@ class LLMProvider(Protocol):
 
     async def chat_async(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         think: Any = None,
         extra: dict[str, Any] | None = None,
     ) -> str: ...
 
+    async def chat_turn_async(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        think: Any = None,
+        extra: dict[str, Any] | None = None,
+    ) -> AssistantTurn: ...
+
     def chat_stream(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -213,28 +252,80 @@ class OllamaProvider:
             except httpx.HTTPError as e:
                 raise RuntimeError(f"Ollama request failed: {e}") from e
 
-    async def chat_async(
+    async def chat_turn_async(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         think: Any = None,
         extra: dict[str, Any] | None = None,
-    ) -> str:
-        """Send a chat prompt to Ollama asynchronously and return the response."""
+    ) -> AssistantTurn:
+        """Send a chat prompt to Ollama asynchronously and return the structured assistant turn."""
         client = self._get_client()
         url = f"{self.base_url}/api/chat"
         options = self._build_options(temperature, max_tokens, extra)
         payload = self._build_payload(self.model, messages, False, options, think)
+        if tools:
+            payload["tools"] = tools
 
         try:
             response = await client.post(url, json=payload)
             response.raise_for_status()
             resp_data = response.json()
-            return str(resp_data["message"]["content"])
+            msg = resp_data.get("message") or {}
+            content = msg.get("content")
+            raw_tool_calls = msg.get("tool_calls") or []
+
+            parsed_calls: list[ToolCall] = []
+            for tc in raw_tool_calls:
+                call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                func_data = tc.get("function") or {}
+                fn_name = func_data.get("name", "")
+                raw_args = func_data.get("arguments", {})
+                if isinstance(raw_args, str):
+                    try:
+                        args = json.loads(raw_args)
+                    except Exception:
+                        args = {"raw": raw_args}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+                else:
+                    args = {}
+                parsed_calls.append(ToolCall(id=call_id, name=fn_name, arguments=args))
+
+            return AssistantTurn(
+                content=content,
+                tool_calls=parsed_calls,
+                raw=resp_data,
+            )
         except httpx.HTTPError as e:
             raise RuntimeError(f"Ollama request failed: {e}") from e
+
+    async def chat_async(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        think: Any = None,
+        extra: dict[str, Any] | None = None,
+    ) -> str:
+        """Send a chat prompt to Ollama asynchronously and return the string response."""
+        turn = await self.chat_turn_async(
+            messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+            extra=extra,
+        )
+        return turn.content or ""
 
     async def chat_stream(
         self,
@@ -305,11 +396,13 @@ class OpenAICompatibleProvider:
     def _build_payload(
         cls,
         model: str,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         stream: bool,
         temperature: float | None,
         max_tokens: int | None,
         think: Any = None,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         msgs = list(messages)
@@ -318,6 +411,10 @@ class OpenAICompatibleProvider:
             payload["temperature"] = temperature
         if max_tokens is not None:
             payload["max_tokens"] = max_tokens
+        if tools:
+            payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
 
         if think is not None:
             effort_val = think.value if hasattr(think, "value") else str(think).lower()
@@ -352,7 +449,7 @@ class OpenAICompatibleProvider:
 
     def chat(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -361,7 +458,7 @@ class OpenAICompatibleProvider:
     ) -> str:
         """Send a chat prompt synchronously and return the assistant response."""
         url = f"{self.base_url}/chat/completions"
-        payload = self._build_payload(self.model, messages, False, temperature, max_tokens, think, extra)
+        payload = self._build_payload(self.model, messages, False, temperature, max_tokens, think, extra=extra)
 
         with httpx.Client(timeout=_REQUEST_TIMEOUT) as client:
             try:
@@ -373,28 +470,88 @@ class OpenAICompatibleProvider:
             except httpx.HTTPError as e:
                 raise RuntimeError(f"OpenAI-compatible request failed: {e}") from e
 
-    async def chat_async(
+    async def chat_turn_async(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict[str, Any]],
         *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
         think: Any = None,
         extra: dict[str, Any] | None = None,
-    ) -> str:
-        """Send a chat prompt asynchronously and return the assistant response."""
+    ) -> AssistantTurn:
+        """Send a chat prompt asynchronously and return the structured assistant turn."""
         client = self._get_client()
         url = f"{self.base_url}/chat/completions"
-        payload = self._build_payload(self.model, messages, False, temperature, max_tokens, think, extra)
+        payload = self._build_payload(
+            self.model,
+            messages,
+            False,
+            temperature,
+            max_tokens,
+            think,
+            tools=tools,
+            tool_choice=tool_choice,
+            extra=extra,
+        )
 
         try:
             response = await client.post(url, json=payload, headers=self._auth_headers())
             response.raise_for_status()
             resp_data = response.json()
-            msg = resp_data["choices"][0]["message"]
-            return str(msg.get("content") or "")
+            choice = resp_data["choices"][0]
+            msg = choice["message"]
+            content = msg.get("content")
+            raw_tool_calls = msg.get("tool_calls") or []
+
+            parsed_calls: list[ToolCall] = []
+            for tc in raw_tool_calls:
+                call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:8]}"
+                func_data = tc.get("function") or {}
+                fn_name = func_data.get("name", "")
+                raw_args = func_data.get("arguments", "{}")
+                if isinstance(raw_args, str):
+                    try:
+                        args = json.loads(raw_args)
+                    except Exception:
+                        args = {"raw": raw_args}
+                elif isinstance(raw_args, dict):
+                    args = raw_args
+                else:
+                    args = {}
+                parsed_calls.append(ToolCall(id=call_id, name=fn_name, arguments=args))
+
+            return AssistantTurn(
+                content=content,
+                tool_calls=parsed_calls,
+                raw=resp_data,
+            )
         except httpx.HTTPError as e:
             raise RuntimeError(f"OpenAI-compatible request failed: {e}") from e
+
+    async def chat_async(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        think: Any = None,
+        extra: dict[str, Any] | None = None,
+    ) -> str:
+        """Send a chat prompt asynchronously and return the string response."""
+        turn = await self.chat_turn_async(
+            messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            think=think,
+            extra=extra,
+        )
+        return turn.content or ""
 
     async def chat_stream(
         self,

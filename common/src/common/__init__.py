@@ -11,9 +11,11 @@ from common.llm.embeddings import (
 )
 from common.llm.manager import LLMManager
 from common.llm.providers import (
+    AssistantTurn,
     LLMProvider,
     OllamaProvider,
     OpenAICompatibleProvider,
+    ToolCall,
     create_provider,
 )
 from common.mcp import (
@@ -42,9 +44,11 @@ from common.profile import ProfileEntry, ProfileStore
 from common.profile.store import get_profile_store
 
 __all__ = [
+    "AssistantTurn",
     "LLMProvider",
     "OllamaProvider",
     "OpenAICompatibleProvider",
+    "ToolCall",
     "create_provider",
     "LLMManager",
     "EmbeddingProvider",
