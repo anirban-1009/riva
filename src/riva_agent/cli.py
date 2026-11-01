@@ -553,12 +553,23 @@ def cmd_digest_generate(args: argparse.Namespace) -> int:
     target_date = args.date or datetime.now().strftime("%Y-%m-%d")
 
     print(f"Generating Riva digest for {target_date}...")
+    mcp_manager = None
+    if getattr(args, "with_mcp", False):
+        from common.mcp.manager import MCPClientManager
+        from riva_agent.mcp.config import get_mcp_servers
+
+        servers = get_mcp_servers()
+        if servers:
+            mcp_manager = MCPClientManager(servers)
+            asyncio.run(mcp_manager.initialize_all())
+
     try:
         ctx = collect_digest_context(date_str=target_date)
         record = generate_digest(
             context=ctx,
             config_obj=cfg,
             dry_run=args.dry_run,
+            mcp_manager=mcp_manager,
         )
         print(f"✔ Digest created: {record.title}")
         if record.filepath:
@@ -584,6 +595,9 @@ def cmd_digest_generate(args: argparse.Namespace) -> int:
     except Exception as e:
         print(f"Failed to generate digest: {e}", file=sys.stderr)
         return 1
+    finally:
+        if mcp_manager:
+            asyncio.run(mcp_manager.close_all())
 
 
 def cmd_digest_list(args: argparse.Namespace) -> int:
@@ -1102,6 +1116,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Preview digest without writing file or sending live notification",
+    )
+    dig_gen.add_argument(
+        "--with-mcp",
+        action="store_true",
+        help="Enrich briefing with live data from configured MCP servers (Lighthouse Genie)",
     )
     dig_gen.set_defaults(func=cmd_digest_generate)
 

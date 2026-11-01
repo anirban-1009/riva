@@ -355,6 +355,9 @@ uv run riva digest generate --dry-run
 # Generate today's briefing and dispatch via Signal (or macOS fallback)
 uv run riva digest generate
 
+# Enrich briefing with live external research & Notion notes via Lighthouse Genie
+uv run riva digest generate --with-mcp
+
 # Generate for a specific date without sending notifications
 uv run riva digest generate --date 2026-11-01 --no-notify
 

@@ -9,7 +9,7 @@
 [![Apple Silicon MLX](https://img.shields.io/badge/acceleration-Apple%20Silicon%20MLX-orange.svg)](https://github.com/ml-explore/mlx)
 [![Storage: SQLite WAL](https://img.shields.io/badge/storage-SQLite%20WAL-003B57.svg)](https://www.sqlite.org/)
 [![OpenClaw Compatible](https://img.shields.io/badge/channel-OpenClaw%20%2F%20Signal-green.svg)](https://github.com/openclaw/openclaw)
-[![Tests Passing](https://img.shields.io/badge/tests-66%20passed%20%7C%2082.6%25%20cov-brightgreen.svg)]()
+[![Tests Passing](https://img.shields.io/badge/tests-205%20passed%20%7C%2085.4%25%20cov-brightgreen.svg)]()
 [![Privacy](https://img.shields.io/badge/privacy-100%25%20On--Device-success.svg)]()
 
 <br />
@@ -300,6 +300,24 @@ uv run riva mcp serve --transport sse --port 8086
 # X-Riva-API-Key: your_mcp_api_key_here
 ```
 
+### 7. Proactive Daily Digests (`riva digest`)
+
+Synthesize autonomous morning briefings archived in `~/.riva/digests/` and dispatched via Signal (or macOS banner):
+
+```bash
+# Preview today's briefing in terminal (dry run)
+uv run riva digest generate --dry-run
+
+# Generate today's briefing and dispatch via Signal (or macOS fallback)
+uv run riva digest generate
+
+# Enrich briefing with live external research & Notion notes via Lighthouse Genie
+uv run riva digest generate --with-mcp
+
+# List archived digests
+uv run riva digest list
+```
+
 ---
 
 ## Genie Packages
@@ -321,7 +339,7 @@ riva/
 |---|---|---|
 | **`riva-agent`** | **Shipped (v1)** | Main orchestrator, OpenAI-compatible Gateway, session & intent routing. |
 | **`common`** | **Shipped (v1)** | Shared SQLite storage (`EpisodicStore`, `ProfileStore`), config, and models. |
-| **`lighthouse-genie`** | Planned (M6) | Autonomous daily digests, research paper triage, and reading lists. |
+| **`lighthouse-genie`** | **Shipped (M6)** | Strategic advisor coordinating tech trends, Notion knowledge, and MCP digests. |
 | **`money-genie`** | Post-v1 | Private personal finance and budget assistant. |
 | **`workout-genie`** | Post-v1 | Workout scheduling and fitness tracking. |
 | **`job-genie`** | Post-v1 | Career management and portfolio assistance. |

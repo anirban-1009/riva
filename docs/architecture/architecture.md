@@ -141,7 +141,7 @@ Central service through which all text generation and tool routing happens.
 
 ## 5. Model Context Protocol (MCP) Subsystem & Genie Architecture
 
-**Status: Phase 1 Active (Infrastructure & CLI Shipped); Phase 2 (Agentic Loop) in Progress.**
+**Status: Active (M6 Completed & Shipped).**
 
 The speculative bespoke `Plugin` protocol (`common/interfaces/plugin.py`) has been officially superseded by the open **Model Context Protocol (MCP)** standard (backed by Anthropic and the Linux Foundation).
 
@@ -169,7 +169,8 @@ Rather than inventing a proprietary tool protocol, Riva natively connects to sta
    - **Mutating Action Gate**: State-modifying actions (create, delete, send, update) require explicit operator confirmation.
 
 4. **Genies as MCP Coordinators**:
-   - Genie packages (starting with `lighthouse-genie` in M6) act as domain coordinators that consume standard MCP servers (Notion, GitHub, DuckDuckGo search) rather than implementing custom tool protocols.
+   - Genie packages act as domain coordinators that consume standard MCP servers rather than implementing custom tool protocols.
+   - `lighthouse-genie` is active (`LighthouseCoordinator`), orchestrating MCP search and Notion tools to assemble strategic intelligence and enrich morning briefings (`riva digest generate --with-mcp`).
 
 5. **Riva as an MCP Server (Provider)**:
    - Exposes durable profile facts, episodic memory, and daily digests as standard MCP tools (`riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`) and resources (`riva://profile`, `riva://memory/recent`, `riva://digests/latest`).

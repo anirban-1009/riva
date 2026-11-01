@@ -1,3 +1,4 @@
+from common.interfaces.plugin import GenieCoordinator, PluginContext
 from common.llm.embeddings import (
     EmbeddingError,
     EmbeddingProvider,
@@ -60,6 +61,8 @@ __all__ = [
     "create_embedding_provider",
     "cosine_similarity",
     "cosine_distance",
+    "GenieCoordinator",
+    "PluginContext",
     "ProfileStore",
     "ProfileEntry",
     "get_profile_store",

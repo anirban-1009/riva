@@ -47,8 +47,9 @@ graph TD
 | **Episodic Memory (`memory.db`)** | **Active (v1)** | Records turns; scoped by session; injects recent context. |
 | **Memory Router & Candidate Staging** | **Active (v1)** | Fast syntactic regex (<0.2ms) or in-process Laya MLX SLM to stage candidate facts for review. |
 | **Dual-Mode Gateway (`gateway.py`)** | **Active (v1)** | `pass-through` (clean proxy for OpenClaw) vs `assistant` (injects profile & memory). |
-| **Model Context Protocol (`common/mcp/`)** | **Active (Phase 1)** | Dynamic discovery, management, and execution of external tools from standard MCP servers. |
-| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; domain capabilities orchestrate standard MCP servers. |
+| **Model Context Protocol (`common/mcp/`)** | **Active (M6)** | Dynamic discovery, management, ReAct tool execution, and MCP server (`riva mcp serve`). |
+| **Lighthouse Genie (`lighthouse-genie`)** | **Active (M6)** | Domain coordinator aggregating tech trends, Notion notes, and MCP digests. |
+| **Domain Genies (`job`, `money`, `workout`)** | **Planned (Post-v1)** | Scaffolded workspace packages for post-v1 domain capabilities. |
 
 > [!NOTE]
 > **Why the Genies aren't wired yet**: As detailed in [[Product Definition]] §6, building the plugin protocol before having a rock-solid, trusted memory foundation leads to premature abstractions. The memory layer was built first; dedicated Genie plugins and tool integrations will be added next.
@@ -182,6 +183,7 @@ uv run riva storage backup
 | **View durable profile** | Any | `uv run riva profile show` |
 | **Review staged memories** | Any | `uv run riva memory list --pending` |
 | **Manage MCP servers** | Any | `uv run riva mcp list / add / call` |
+| **Generate daily digest** | Any | `uv run riva digest generate [--with-mcp]` |
 | **Serve memory over MCP** | Standalone | `uv run riva mcp serve [--transport sse]` |
 | **Clean / vacuum storage** | Any | `uv run riva storage vacuum` |
 | **Stop full stack** | Online | `./scripts/start_stack.sh stop` |

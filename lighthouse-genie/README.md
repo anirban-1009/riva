@@ -2,15 +2,14 @@
 
 ## Purpose
 
-The `lighthouse-genie` package is responsible for acting as the user's strategic advisor, personal guide, and learning coordinator. It tracks AI news, tech trends, research publications, GitHub projects, coordinates Notion integrations, maps learning roadmaps, schedules reminders, and tracks long-term goals.
+The `lighthouse-genie` package acts as the user's strategic advisor, personal guide, and learning coordinator. It coordinates technology news, AI research publications, and Notion knowledge by orchestrating configured Model Context Protocol (MCP) servers.
 
 ## Responsibilities
 
-- **Tech Trends & AI News Monitoring**: Aggregating updates from RSS, arXiv, GitHub, Hacker News, Twitter, and other research sources.
-- **Learning & Roadmaps**: Advising on technical roadmaps, learning paths, and book recommendations.
-- **Notion Integration & Sync**: Maintaining a personal knowledge base and syncing items like bookmarked papers, lists, and task notes to Notion.
-- **Goal & Reminder Planning**: Coordinating reminders, weekly digests, and tracking progress toward long-term personal growth goals.
-- **External API Integrations**: Connecting to knowledge storage interfaces, news scrapers, and task boards.
+- **Tech Trends & AI News Monitoring**: Queries configured MCP search tools (e.g. Brave, DuckDuckGo) for breakthrough research and technology updates.
+- **Notion Integration & Sync**: Connects to MCP Notion tools for personal knowledge retrieval and tracking.
+- **Proactive Briefings**: Feeds aggregated strategic intelligence and source citations into morning digests via `gather_briefing_context()`.
+- **Genie Coordinator**: Implements the `GenieCoordinator` protocol from `common.interfaces.plugin`.
 
 ## Dependencies
 
@@ -21,12 +20,9 @@ The `lighthouse-genie` package is responsible for acting as the user's strategic
 ```text
 src/
 └── lighthouse_genie/
-    ├── __init__.py
-    ├── models.py
-    ├── services.py
-    ├── tools.py
-    ├── prompts.py
-    └── plugin.py
+    ├── __init__.py       # Exports LighthouseCoordinator, models, and CLI diagnostics
+    ├── coordinator.py    # MCP tool discovery, search/notion parsing, and briefing assembly
+    └── models.py         # TechTrendItem, NotionItem, LighthouseBriefing
 ```
 
 ## Running

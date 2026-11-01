@@ -188,7 +188,7 @@ gantt
 ---
 
 ### Phase 7: Model Context Protocol (MCP) Integration & Lighthouse Genie (M6)
-**Status**: **IN PROGRESS** (Phases 1–4 Completed & Verified)
+**Status**: **COMPLETED** (Phases 1–5 Completed & Verified)
 **Estimated Duration**: ~7–10 Days
 **Primary Focus**: Standardizing tool and capability interoperability with the Model Context Protocol (MCP) in place of bespoke plugin interfaces, and delivering Lighthouse Genie.
 
@@ -209,10 +209,12 @@ gantt
   - Memory integrity defense: tagging raw tool payloads with `is_synthetic_context` to avoid `sqlite-vec` vector bloat.
 - **Phase 4: Riva as an MCP Server (`riva mcp serve`)**: **COMPLETED**
   - Expose `profile.db` facts, `memory.db` episodic recall, and daily digests as standard MCP tools (`riva_get_profile`, `riva_set_profile_fact`, `riva_search_memory`, `riva_log_turn`, `riva_get_recent_turns`) and resources (`riva://profile`, `riva://memory/recent`, `riva://digests/latest`).
-  - Built CLI command `riva mcp serve [--transport stdio|sse]` with stdio wire protection.
+  - Built CLI command `riva mcp serve [--transport stdio|sse]` with stdio wire protection and API key authentication (`RIVA_MCP_API_KEY`).
   - Client connection guides for Claude Desktop, Cursor, and OpenClaw.
-- **Phase 5: Lighthouse Genie & Proactive Digest Integration**: **NEXT**
-  - Connect external MCP servers (Notion, GitHub, DuckDuckGo search) to enrich morning briefings in `generator.py`.
+- **Phase 5: Lighthouse Genie & Proactive Digest Integration**: **COMPLETED**
+  - Officially superseded `common/interfaces/plugin.py` with standard MCP orchestration (`common.interfaces.plugin.GenieCoordinator`).
+  - Implemented `lighthouse-genie` (`LighthouseCoordinator`) orchestrating standard MCP tools (search, Notion, GitHub).
+  - Enriched proactive morning digests in `generator.py` with live MCP intelligence and added `--with-mcp` CLI flag.
 
 ---
 
@@ -226,4 +228,4 @@ gantt
 | **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **COMPLETED** |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | **COMPLETED** |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + Signal via OpenClaw) | Week 5–6 (Days 29–33) | **COMPLETED** |
-| **Phase 7** | **M6** | Model Context Protocol (MCP) Integration & Lighthouse Genie | Week 6–7 (Days 34–43) | **IN PROGRESS** (Phases 1–4 Completed) |
+| **Phase 7** | **M6** | Model Context Protocol (MCP) Integration & Lighthouse Genie | Week 6–7 (Days 34–43) | **COMPLETED** |
