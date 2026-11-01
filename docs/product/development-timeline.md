@@ -20,7 +20,7 @@ gantt
   M3 - Trust Surface, Storage & CLI           :done, m3, after m2, 5d
   v1 Checkpoint & Privacy Check               :done, crit, v1_done, after m3, 2d
   M4 - Semantic Recall (sqlite-vec)           :done, m4, after v1_done, 7d
-  M5 - Proactive Digests (macOS)              :m5, after m4, 5d
+  M5 - Proactive Digests (Signal via OpenClaw):m5, after m4, 5d
   M6 - First Capability Genie                 :m6, after m5, 8d
   Plugin Protocol Extraction                  :m6_proto, after m6, 4d
 ```
@@ -172,11 +172,14 @@ gantt
 **Primary Focus**: Riva initiating value autonomously without waiting for a prompt.
 
 - **Local Scheduler**:
-  - macOS `launchd` service or lightweight cron trigger.
-- **Durable Output**:
-  - Writes digest summaries directly to local Markdown files in `~/riva/digests/`.
-- **Local Alerting**:
-  - Trigger native macOS banner notification via `osascript` (zero external push infrastructure).
+  - macOS `launchd` service or lightweight cron trigger to run digest generation periodically.
+- **Durable Local Output**:
+  - Writes digest summaries directly to local Markdown files in `~/riva/digests/` as the durable, inspectable record.
+- **E2EE Outbound Delivery via Signal**:
+  - Delivers digests and notifications directly to the user's Signal app via OpenClaw's channel bridge (`openclaw message send --channel signal -t <dest> -m "<digest>"`).
+  - Preserves E2EE and local-first privacy (zero external cloud push/APNS/Firebase dependencies).
+  - Enables two-way interactive follow-up turns directly in the existing Signal conversation thread.
+  - Optional fallback to native macOS banner notification (`osascript`) when offline or unconfigured.
 
 ---
 
@@ -203,5 +206,5 @@ gantt
 | **Phase 3** | **M2** | Episodic Memory & spaCy Syntactic Router | Week 2–3 (Days 10–16) | **COMPLETED** |
 | **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **COMPLETED** |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | **COMPLETED** |
-| **Phase 6** | **M5** | Proactive Local Digests (`launchd` + macOS notification) | Week 5–6 (Days 29–33) | Planned |
+| **Phase 6** | **M5** | Proactive Local Digests (`launchd` + Signal via OpenClaw) | Week 5–6 (Days 29–33) | Planned |
 | **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) | Planned |

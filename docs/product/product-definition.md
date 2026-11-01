@@ -154,7 +154,7 @@ Sequenced by dependency, not ambition.
 | **M2 — Episodic memory** | Conversation persistence and recency-based recall. | M1 |
 | **M3 — CLI** | `riva ask`, `riva memory list/forget`. The trust surface from §3.3. | M2 |
 | **M4 — Semantic recall** | Local-embedding vector search over memory, once recency is proven insufficient. | M3 |
-| **M5 — Proactive digests** | Scheduler process, first digest. A second entry point beyond the gateway. Delivered via a local macOS notification (`osascript`/`terminal-notifier`); the digest body is written to `~/riva/digests/` as the durable, inspectable record — nothing leaves the machine, satisfying §3.1. | M3 |
+| **M5 — Proactive digests** | Scheduler process, first digest. A second entry point beyond the gateway. Delivered via Signal (E2EE via OpenClaw bridge) with optional local macOS notification fallback; the digest body is written to `~/riva/digests/` as the durable, inspectable record — nothing leaves the machine unencrypted, satisfying §3.1. | M3 |
 | **M6 — First Genie** | One domain, built directly on memory. Protocol extracted afterward, not before. | M4 |
 
 **Genie priority when M6 arrives**: Lighthouse Genie first. Its data is the least sensitive (public news, papers, repos), which makes it the safest place to learn the integration patterns, and its output is naturally periodic — so it doubles as the first real consumer of the M5 scheduler. Money and Workout carry the sensitive data and should be built once the memory layer has earned trust.
@@ -182,5 +182,5 @@ Formerly "Open Questions." Resolved 2026-08-23.
 - **§5 routing** — decided: virtual model id (`riva`) on the `model` field. See §5.
 - **Storage engine** — decided: SQLite for both profile and episodic memory. No server process, no network surface (§3.1), and a file I can open and inspect by hand with the `sqlite3` CLI (§3.3) — no tooling gap to justify anything heavier for a single-user store. If M4's semantic recall needs vector search, the `sqlite-vec` extension covers it without a storage-engine swap; revisit only if that turns out not to be true.
 - **Memory admission policy** — decided: explicit save + staged/reviewed passive candidates. See §6, "Memory Admission Policy."
-- **Notification channel for M5** — decided: local macOS notification + digest file under `~/riva/digests/`. See §7.
+- **Notification channel for M5** — decided: Signal (E2EE delivered via OpenClaw channel bridge, enabling two-way conversational follow-up) + durable digest file under `~/riva/digests/`, with optional local macOS notification fallback. See §7.
 - **Doc drift** — fixed: [[Architecture]] now marks unimplemented modules (`common/memory/`, `common/profile/`, `common/interfaces/plugin.py`, `common/llm/router.py`) as planned and leads with memory/profile ahead of the plugin protocol.
