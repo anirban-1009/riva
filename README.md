@@ -32,6 +32,7 @@ Riva is an on-device personal AI platform that remembers who you are across days
 - **Multi-Channel Presence**: Seamlessly interact through **Signal** on your phone (routed via OpenClaw), stream in the terminal via `riva ask`, or connect standard OpenAI-compatible web clients.
 - **Inspectable Human-in-the-Loop Trust**: Passive facts are **staged, not committed**. Review proposals with `riva memory list --pending`, accept or reject with one command, or permanently purge turns with `riva memory forget`.
 - **Local Storage Lifecycle**: Built-in `riva storage` suite for database vacuuming, WAL truncation, 30-day retention pruning, 7-day candidate expiry, copytruncate log rotation, and point-in-time disaster recovery snapshots.
+- **Model Context Protocol (MCP)**: Dynamic tool ecosystem support. Seamlessly register, inspect, test, and execute tools from any standard MCP server (e.g. web search, local filesystem, developer tools) via stdio or SSE.
 
 ---
 
@@ -218,6 +219,31 @@ uv run riva storage prune --turns-days 60 --pending-days 14
 
 # Create an online point-in-time snapshot backup in ~/.riva/backups/
 uv run riva storage backup
+```
+
+### 6. Model Context Protocol (MCP) Integrations (`riva mcp`)
+
+Dynamically register, test, inspect, and invoke tools from external MCP servers via stdio or SSE:
+
+```bash
+# Add a new MCP server (e.g. DuckDuckGo search or local filesystem)
+uv run riva mcp add search uvx duckduckgo-mcp-server
+uv run riva mcp add notes npx -y @modelcontextprotocol/server-filesystem /Users/username/notes --readonly
+
+# List all configured servers
+uv run riva mcp list
+
+# Test connectivity and ping servers
+uv run riva mcp test [server]
+
+# Inspect exposed tools and parameter schemas
+uv run riva mcp tools [server]
+
+# Directly invoke a tool for inspection or debugging
+uv run riva mcp call search search '{"query": "Apple Silicon MLX", "max_results": 2}'
+
+# Remove an MCP server
+uv run riva mcp remove search
 ```
 
 ---

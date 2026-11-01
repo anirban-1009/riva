@@ -47,7 +47,8 @@ graph TD
 | **Episodic Memory (`memory.db`)** | **Active (v1)** | Records turns; scoped by session; injects recent context. |
 | **Memory Router & Candidate Staging** | **Active (v1)** | Fast syntactic regex (<0.2ms) or in-process Laya MLX SLM to stage candidate facts for review. |
 | **Dual-Mode Gateway (`gateway.py`)** | **Active (v1)** | `pass-through` (clean proxy for OpenClaw) vs `assistant` (injects profile & memory). |
-| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; plugin protocol and tool execution deferred to post-v1. |
+| **Model Context Protocol (`common/mcp/`)** | **Active (Phase 1)** | Dynamic discovery, management, and execution of external tools from standard MCP servers. |
+| **Domain Genies (`job`, `money`, `workout`, `lighthouse`)** | **Planned (Post-v1)** | Scaffolded workspace packages; domain capabilities orchestrate standard MCP servers. |
 
 > [!NOTE]
 > **Why the Genies aren't wired yet**: As detailed in [[Product Definition]] §6, building the plugin protocol before having a rock-solid, trusted memory foundation leads to premature abstractions. The memory layer was built first; dedicated Genie plugins and tool integrations will be added next.
@@ -67,6 +68,8 @@ Riva operates across two distinct modes: **Running (Live Inference)** and **Offl
 | **Edit Profile (`riva profile edit`)** | ✔ YAML editor in terminal | ✔ YAML editor in terminal |
 | **Review Candidate Memories (`riva memory list`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
 | **Storage Diagnostics (`riva storage status`)** | ✔ Direct SQLite read | ✔ Direct SQLite read |
+| **Manage MCP Servers (`riva mcp list / add`)** | ✔ Direct config read/write | ✔ Direct config read/write |
+| **Inspect / Test MCP Tools (`riva mcp tools / test`)** | ✔ Local stdio subprocess | ✔ Local stdio subprocess |
 
 ---
 

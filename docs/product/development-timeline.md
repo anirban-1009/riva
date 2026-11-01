@@ -21,8 +21,9 @@ gantt
   v1 Checkpoint & Privacy Check               :done, crit, v1_done, after m3, 2d
   M4 - Semantic Recall (sqlite-vec)           :done, m4, after v1_done, 7d
   M5 - Proactive Digests (Signal via OpenClaw):done, m5, after m4, 5d
-  M6 - First Capability Genie                 :m6, after m5, 8d
-  Plugin Protocol Extraction                  :m6_proto, after m6, 4d
+  M6 - MCP Pure Infrastructure & CLI Suite    :done, m6_p1, after m5, 4d
+  M6 - Provider Tool-Calling & Agent Loop     :active, m6_p2, after m6_p1, 5d
+  M6 - Lighthouse Genie via MCP               :m6_p3, after m6_p2, 6d
 ```
 
 ---
@@ -186,17 +187,27 @@ gantt
 
 ---
 
-### Phase 7: First Capability Genie — Lighthouse Genie (M6)
+### Phase 7: Model Context Protocol (MCP) Integration & Lighthouse Genie (M6)
+**Status**: **IN PROGRESS** (Phase 1 Infrastructure & CLI Management Shipped)
 **Estimated Duration**: ~7–10 Days
-**Primary Focus**: Building one real capability directly against the memory layer, then extracting the Plugin Protocol.
+**Primary Focus**: Standardizing tool and capability interoperability with the Model Context Protocol (MCP) in place of bespoke plugin interfaces, and delivering Lighthouse Genie.
 
-- **Why Lighthouse First**:
-  - Least sensitive domain (AI papers, tech news, GitHub trending, reading list).
-  - Natural fit for periodic proactive runs (M5 scheduler integration).
-- **Implementation**:
-  - Build directly as a reader and writer of memory and profile (no custom protocol upfront).
-- **Protocol Extraction**:
-  - Extract `common/interfaces/plugin.py` based on what Lighthouse Genie *actually* needed, replacing speculative abstractions with tested interfaces.
+- **Phase 1: Pure MCP Infrastructure & CLI Management**: **COMPLETED**
+  - Official `mcp` Python SDK integration (`common/src/common/mcp/`).
+  - Stdio & SSE client management, tool namespacing (`<server>__<tool>`), error isolation, and health pings.
+  - Programmatic config management in `riva_agent/mcp/config.py`.
+  - Full CLI management suite: `riva mcp add`, `remove`, `list`, `test`, `tools`, `call`.
+  - Self-contained test server fixtures with 100% test pass.
+- **Phase 2: Provider Tool-Calling & Agentic ReAct Loop**: **IN PROGRESS**
+  - Wire function/tool calling into `LLMProvider` (`OllamaProvider` and `OpenAICompatibleProvider`).
+  - Implement bounded multi-turn agent execution loop (`max_tool_iterations: 5`) with read-only auto-approval and mutating confirmation gate.
+- **Phase 3: Dual-Mode Gateway Integration & Streaming Safety**:
+  - SSE keep-alive tool execution events to prevent client timeouts.
+  - Memory integrity defense: tagging raw tool payloads with `is_synthetic_context` to avoid `sqlite-vec` vector bloat.
+- **Phase 4: Riva as an MCP Server**:
+  - Expose `profile.db` facts and `memory.db` episodic recall as standard MCP tools and resources (`riva://profile`, `riva://memory/recent`) for Claude Desktop, Cursor, and OpenClaw.
+- **Phase 5: Lighthouse Genie & Proactive Digest Integration**:
+  - Connect external MCP servers (Notion, GitHub, DuckDuckGo search) to enrich morning briefings in `generator.py`.
 
 ---
 
@@ -210,4 +221,4 @@ gantt
 | **Phase 4** | **M3** | Trust CLI (`riva ask`, `riva memory`), Storage Management (`riva storage`), Log Rotation $\rightarrow$ **v1 SHIPS** | Week 3–4 (Days 17–21) | **COMPLETED** |
 | **Phase 5** | **M4** | Local Vector Search (`sqlite-vec` + local embeddings) | Week 4–5 (Days 22–28) | **COMPLETED** |
 | **Phase 6** | **M5** | Proactive Local Digests (`launchd` + Signal via OpenClaw) | Week 5–6 (Days 29–33) | **COMPLETED** |
-| **Phase 7** | **M6** | Lighthouse Genie & Plugin Protocol Extraction | Week 6–7 (Days 34–43) | Planned |
+| **Phase 7** | **M6** | Model Context Protocol (MCP) Integration & Lighthouse Genie | Week 6–7 (Days 34–43) | **IN PROGRESS** (Phase 1 Shipped) |

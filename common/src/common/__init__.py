@@ -16,6 +16,17 @@ from common.llm.providers import (
     OpenAICompatibleProvider,
     create_provider,
 )
+from common.mcp import (
+    MCPClient,
+    MCPClientManager,
+    ServerConfig,
+    ServerStatus,
+    ServerTransport,
+    ToolDefinition,
+    ToolResult,
+    decode_tool_name,
+    encode_tool_name,
+)
 from common.memory import (
     EpisodicStore,
     PendingMemory,
@@ -48,6 +59,15 @@ __all__ = [
     "ProfileStore",
     "ProfileEntry",
     "get_profile_store",
+    "MCPClient",
+    "MCPClientManager",
+    "ServerConfig",
+    "ServerStatus",
+    "ServerTransport",
+    "ToolDefinition",
+    "ToolResult",
+    "encode_tool_name",
+    "decode_tool_name",
     "EpisodicStore",
     "Turn",
     "PendingMemory",

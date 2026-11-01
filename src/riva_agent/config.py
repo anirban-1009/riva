@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -144,3 +145,17 @@ DIGEST_SIGNAL_ENABLED: bool = get_digest_config()["signal_enabled"]
 DIGEST_SIGNAL_RECIPIENT: str | None = get_digest_config()["signal_recipient"]
 DIGEST_SIGNAL_SEND_FULL: bool = get_digest_config()["signal_send_full"]
 DIGEST_MACOS_FALLBACK: bool = get_digest_config()["macos_fallback"]
+
+# MCP (Model Context Protocol) configuration
+_mcp_config: dict = _config.get("mcp") or {}
+MCP_ENABLED: bool = os.environ.get("RIVA_MCP_ENABLED", str(_mcp_config.get("enabled", True))).lower() in (
+    "true",
+    "1",
+    "yes",
+)
+MCP_AUTO_APPROVE_READONLY: bool = bool(_mcp_config.get("auto_approve_readonly", True))
+MCP_MAX_TOOL_ITERATIONS: int = int(
+    os.environ.get("RIVA_MCP_MAX_ITERATIONS", str(_mcp_config.get("max_tool_iterations", 5)))
+)
+MCP_TIMEOUT_SECONDS: float = float(os.environ.get("RIVA_MCP_TIMEOUT", str(_mcp_config.get("timeout_seconds", 30.0))))
+MCP_SERVERS: dict[str, Any] = dict(_mcp_config.get("servers", {}))

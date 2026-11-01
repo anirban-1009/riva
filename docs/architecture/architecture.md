@@ -139,62 +139,40 @@ Central service through which all text generation and tool routing happens.
 
 ---
 
-## 5. The Plugin Protocol
+## 5. Model Context Protocol (MCP) Subsystem & Genie Architecture
 
-**Status: deferred to post-v1.** Per [[Product Definition]] §6, this interface is a design sketch, not a v1 build target: it's specified in full below before a single Genie exists, which the product definition calls out as a real risk — the confidence-score routing in particular (`can_handle` returning a float) assumes a routing model that's never been tested. The plan is to build the memory layer first, then one real Genie directly against it, then extract this protocol from what that Genie actually needed.
+**Status: Phase 1 Active (Infrastructure & CLI Shipped); Phase 2 (Agentic Loop) in Progress.**
 
-To keep the platform extensible, every Genie must implement a unified `Plugin` interface defined under `common/interfaces/plugin.py`:
+The speculative bespoke `Plugin` protocol (`common/interfaces/plugin.py`) has been officially superseded by the open **Model Context Protocol (MCP)** standard (backed by Anthropic and the Linux Foundation).
 
-```python
-from typing import Protocol, Any, runtime_checkable
-from dataclasses import dataclass
+Rather than inventing a proprietary tool protocol, Riva natively connects to standard MCP servers (stdio and SSE) and exposes its own persistent memory as an MCP server.
 
+### Architecture & Capabilities
 
-@dataclass
-class PluginContext:
-    domain: str
-    data: dict[str, Any]
-    memories: list[dict[str, Any]]
-    facts: list[str]
+1. **MCP Client Manager (`common/mcp/`)**:
+   - Manages asynchronous connections to external MCP servers (`MCPClient` and `MCPClientManager`).
+   - Dynamically discovers tools and transforms schemas to OpenAI-compatible function definitions (`[{"type": "function", "function": {...}}]`).
+   - Namespaces tools to prevent naming collisions: `<server_name>__<tool_name>` (e.g. `search__search`).
+   - Supports both `stdio` (local subprocesses) and `sse` (HTTP streaming) transports with timeout protection and health monitoring.
 
+2. **Operator Trust Surface & Configuration (`riva mcp`)**:
+   - Dynamic configuration persisted in `config.yml` via CLI:
+     - `riva mcp add <name> <command> [args...]`
+     - `riva mcp remove <name>`
+     - `riva mcp list`
+     - `riva mcp test [server]`
+     - `riva mcp tools [server]`
+     - `riva mcp call <server> <tool> [json_args]`
 
-@dataclass
-class Tool:
-    name: str
-    description: str
-    parameters: dict[str, Any]
+3. **Trust & Safety Gate**:
+   - **Read-Only Auto-Approval**: Safe inspection and read-only queries (search, fetch, get) execute autonomously within iteration bounds (`max_tool_iterations: 5`).
+   - **Mutating Action Gate**: State-modifying actions (create, delete, send, update) require explicit operator confirmation.
 
+4. **Genies as MCP Coordinators**:
+   - Genie packages (starting with `lighthouse-genie` in M6) act as domain coordinators that consume standard MCP servers (Notion, GitHub, DuckDuckGo search) rather than implementing custom tool protocols.
 
-@runtime_checkable
-class Plugin(Protocol):
-    name: str
-
-    async def can_handle(self, request: str, context: dict[str, Any]) -> float:
-        """
-        Return a confidence score (0.0 to 1.0) indicating relevance
-        of the plugin to the incoming user request.
-        """
-        ...
-
-    async def gather_context(self, request: str, context: dict[str, Any]) -> PluginContext:
-        """
-        Retrieve relevant local data, domain-specific memories,
-        and facts required to answer the user request.
-        """
-        ...
-
-    async def tools(self) -> list[Tool]:
-        """
-        Expose callable actions/functions that the orchestrator/LLM can invoke.
-        """
-        ...
-
-    async def execute(self, tool_name: str, **kwargs: Any) -> Any:
-        """
-        Execute a requested tool with arguments and return the result.
-        """
-        ...
-```
+5. **Riva as an MCP Server (Provider)**:
+   - Exposes Riva's durable profile facts (`profile.db`) and episodic memory (`memory.db`) as MCP tools and resources (`riva://profile`, `riva://memory/recent`) to external agents (Cursor, Claude Desktop, OpenClaw).
 
 ---
 
