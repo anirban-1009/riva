@@ -37,6 +37,10 @@ def generate_launchd_plist(
     digest_log = logs / "digest.log"
 
     uv_path = shutil.which("uv") or "/usr/local/bin/uv"
+    path_env = (
+        "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:"
+        f"/usr/bin:/bin:/usr/sbin:/sbin:{Path.home() / '.local/bin'}"
+    )
 
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,6 +48,11 @@ def generate_launchd_plist(
 <dict>
     <key>Label</key>
     <string>{LAUNCHD_LABEL}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{path_env}</string>
+    </dict>
     <key>ProgramArguments</key>
     <array>
         <string>{uv_path}</string>
