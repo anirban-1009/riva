@@ -27,6 +27,8 @@ def test_generate_launchd_plist(tmp_path):
     assert "riva" in plist
     assert "digest" in plist
     assert "generate" in plist
+    assert "<key>EnvironmentVariables</key>" in plist
+    assert "/opt/homebrew/bin" in plist
 
 
 def test_install_launchd_schedule_dry_run(tmp_path):
