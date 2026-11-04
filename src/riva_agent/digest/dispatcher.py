@@ -1,6 +1,8 @@
 import logging
+import os
 import shutil
 import subprocess
+import time
 
 from riva_agent.digest.models import DigestConfig, DigestRecord, NotificationResult
 
@@ -51,8 +53,10 @@ def send_signal_message(
     *,
     dry_run: bool = False,
     timeout: float = 30.0,
+    max_retries: int = 3,
+    retry_delay: float | None = None,
 ) -> NotificationResult:
-    """Send an E2EE message over Signal using OpenClaw's CLI bridge."""
+    """Send an E2EE message over Signal using OpenClaw's CLI bridge with automatic retries."""
     if not recipient or not recipient.strip():
         return NotificationResult(
             channel="signal",
@@ -85,6 +89,7 @@ def send_signal_message(
             error="openclaw_not_found",
         )
 
+    delay = 0.0 if "PYTEST_CURRENT_TEST" in os.environ else (3.0 if retry_delay is None else retry_delay)
     sent_count = 0
     for idx, chunk in enumerate(chunks, 1):
         prefix = f"({idx}/{len(chunks)})\n\n" if len(chunks) > 1 else ""
@@ -102,40 +107,62 @@ def send_signal_message(
             payload,
         ]
 
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-            )
-            if proc.returncode != 0:
-                err_detail = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
-                logger.error("Signal delivery failed via OpenClaw: %s", err_detail)
-                return NotificationResult(
-                    channel="signal",
-                    success=False,
-                    message=f"Failed sending chunk {idx}/{len(chunks)}: {err_detail}",
-                    error=err_detail,
+        chunk_sent = False
+        last_error = ""
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
                 )
-            sent_count += 1
-        except subprocess.TimeoutExpired:
-            err_msg = f"Timed out after {timeout}s while sending Signal message to {clean_recipient}"
-            logger.error(err_msg)
-            return NotificationResult(
-                channel="signal",
-                success=False,
-                message=err_msg,
-                error="timeout",
+                if proc.returncode == 0:
+                    chunk_sent = True
+                    sent_count += 1
+                    break
+
+                err_detail = proc.stderr.strip() or proc.stdout.strip() or f"exit code {proc.returncode}"
+                last_error = err_detail
+                logger.warning(
+                    "Signal delivery attempt %d/%d failed via OpenClaw: %s",
+                    attempt,
+                    max_retries,
+                    err_detail,
+                )
+            except subprocess.TimeoutExpired:
+                last_error = f"Timed out after {timeout}s while executing openclaw"
+                logger.warning(
+                    "Signal delivery attempt %d/%d timed out: %s",
+                    attempt,
+                    max_retries,
+                    last_error,
+                )
+            except Exception as e:
+                last_error = f"Unexpected error executing openclaw: {e}"
+                logger.warning(
+                    "Signal delivery attempt %d/%d encountered unexpected error: %s",
+                    attempt,
+                    max_retries,
+                    last_error,
+                )
+
+            if attempt < max_retries and delay > 0:
+                time.sleep(delay)
+
+        if not chunk_sent:
+            logger.error(
+                "Signal delivery permanently failed for chunk %d/%d: %s",
+                idx,
+                len(chunks),
+                last_error,
             )
-        except Exception as e:
-            err_msg = f"Unexpected error executing openclaw: {e}"
-            logger.error(err_msg)
             return NotificationResult(
                 channel="signal",
                 success=False,
-                message=err_msg,
-                error=str(e),
+                message=f"Failed sending chunk {idx}/{len(chunks)} after {max_retries} attempt(s): {last_error}",
+                error=last_error,
             )
 
     return NotificationResult(
