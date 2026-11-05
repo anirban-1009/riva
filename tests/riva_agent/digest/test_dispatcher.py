@@ -196,3 +196,31 @@ def test_dispatch_digest_missing_recipient_triggers_fallback():
         assert results[0].success is False
         assert results[1].channel == "macos"
         assert results[1].success is True
+
+
+def test_send_signal_message_retries_transient_failure():
+    # First attempt fails with deadline, second attempt succeeds
+    fail_proc = MagicMock(returncode=1, stdout="", stderr="Signal HTTP exceeded deadline after 10000ms")
+    success_proc = MagicMock(returncode=0, stdout="sent", stderr="")
+
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/openclaw"),
+        patch("subprocess.run", side_effect=[fail_proc, success_proc]) as mock_run,
+    ):
+        res = send_signal_message("+1234567890", "Test message", max_retries=3, retry_delay=0.0)
+        assert res.success is True
+        assert "Delivered 1 chunk" in res.message
+        assert mock_run.call_count == 2
+
+
+def test_send_signal_message_retries_exhausted():
+    fail_proc = MagicMock(returncode=1, stdout="", stderr="Signal HTTP exceeded deadline after 10000ms")
+
+    with (
+        patch("shutil.which", return_value="/usr/local/bin/openclaw"),
+        patch("subprocess.run", return_value=fail_proc) as mock_run,
+    ):
+        res = send_signal_message("+1234567890", "Test message", max_retries=3, retry_delay=0.0)
+        assert res.success is False
+        assert "after 3 attempt(s)" in res.message
+        assert mock_run.call_count == 3

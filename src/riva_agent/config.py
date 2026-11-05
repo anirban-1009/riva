@@ -49,6 +49,7 @@ PROVIDER: str = (
 
 _ollama_config: dict = _config.get("ollama") or {}
 OLLAMA_BASE_URL: str | None = os.environ.get("OLLAMA_BASE_URL", _ollama_config.get("base_url"))
+OLLAMA_MODEL: str = os.environ.get("OLLAMA_MODEL", _ollama_config.get("model", "llama3:8b"))
 
 _openai_config: dict = _config.get("openai") or {}
 

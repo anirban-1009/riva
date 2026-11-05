@@ -4,11 +4,13 @@ import pytest
 
 from common.memory.store import PendingMemory, Turn
 from common.profile.store import ProfileEntry
+from riva_agent import config
 from riva_agent.digest.generator import (
     build_digest_prompt,
     collect_digest_context,
     generate_digest,
     generate_digest_async,
+    generate_offline_fallback_content,
     list_digests,
     read_digest,
     strip_thinking_tags,
@@ -198,3 +200,70 @@ def test_list_and_read_digests(tmp_path):
     assert rec2 is not None
     assert rec2.id == "2026-11-02-def"
     assert rec2.content_markdown == "Content 2"
+
+
+def test_generate_offline_fallback_content():
+    ctx = DigestContext(
+        date="2026-11-04",
+        profile_goals=[{"key": "latency", "value": "<50ms"}],
+        profile_facts=[{"key": "city", "value": "Hyderabad"}],
+        recent_turns=[{"role": "user", "content": "How to tune models?"}],
+        pending_memories=[{"id": 7, "fact": "Prefers vim"}],
+        external_insights=["Notion: 2 tasks due"],
+    )
+    content = generate_offline_fallback_content(ctx, "Daily Briefing: 2026-11-04")
+    assert "Daily Briefing: 2026-11-04" in content
+    assert "offline fallback mode" in content
+    assert "latency:" in content
+    assert "Hyderabad" in content
+    assert "How to tune models?" in content
+    assert "[ID 7] Prefers vim" in content
+    assert "Notion: 2 tasks due" in content
+
+
+@pytest.mark.asyncio
+async def test_generate_digest_fallback_to_ollama(tmp_path, monkeypatch):
+    cfg = DigestConfig(output_dir=tmp_path)
+    ctx = DigestContext(date="2026-11-04")
+
+    # Mock primary provider failing and ollama provider succeeding
+    mock_primary = MagicMock()
+    mock_primary.chat_async = AsyncMock(side_effect=RuntimeError("Primary connection refused"))
+
+    mock_ollama = MagicMock()
+    mock_ollama.chat_async = AsyncMock(return_value="# 🌅 Ollama Digest\nGenerated successfully.")
+
+    monkeypatch.setattr(config, "PROVIDER", "openai")
+
+    def mock_create_provider(name, **kwargs):
+        if name == "ollama":
+            return mock_ollama
+        return mock_primary
+
+    monkeypatch.setattr("riva_agent.digest.generator.create_provider", mock_create_provider)
+
+    record = await generate_digest_async(context=ctx, config_obj=cfg, dry_run=False)
+    assert record.date == "2026-11-04"
+    assert "# 🌅 Ollama Digest" in record.content_markdown
+    assert record.filepath.exists()
+
+
+@pytest.mark.asyncio
+async def test_generate_digest_fallback_to_offline_content(tmp_path, monkeypatch):
+    cfg = DigestConfig(output_dir=tmp_path)
+    ctx = DigestContext(
+        date="2026-11-04",
+        profile_goals=[{"key": "deploy", "value": "Prod release"}],
+    )
+
+    mock_failing = MagicMock()
+    mock_failing.chat_async = AsyncMock(side_effect=RuntimeError("All LLMs offline"))
+
+    monkeypatch.setattr(config, "PROVIDER", "openai")
+    monkeypatch.setattr("riva_agent.digest.generator.create_provider", lambda *args, **kwargs: mock_failing)
+
+    record = await generate_digest_async(context=ctx, config_obj=cfg, dry_run=False)
+    assert record.date == "2026-11-04"
+    assert "offline fallback mode" in record.content_markdown
+    assert "Prod release" in record.content_markdown
+    assert record.filepath.exists()

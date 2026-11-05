@@ -168,6 +168,78 @@ async def enrich_context_with_mcp(
         logger.warning("Failed to enrich digest with MCP insights: %s", exc)
 
 
+def generate_offline_fallback_content(context: DigestContext, title: str) -> str:
+    """Generate a clean, structured Markdown briefing directly from local SQLite context when no LLM is reachable."""
+    lines = [
+        f"# 📄 {title}",
+        "",
+        "> [!NOTE]",
+        "> *Generated in offline fallback mode — local LLM service was unreachable.*",
+        "",
+        "## 1. 🎯 Active Priorities & Goals",
+    ]
+    if context.profile_goals:
+        for g in context.profile_goals:
+            lines.append(f"*   **{g['key']}:** {g['value']}")
+    else:
+        lines.append("*   *No specific goals currently set in profile.*")
+
+    lines.extend(
+        [
+            "",
+            "## 2. 🔄 Recent Context & Momentum",
+        ]
+    )
+    if context.profile_facts:
+        for f in context.profile_facts:
+            lines.append(f"*   **{f['key']}:** {f['value']}")
+    if context.recent_turns:
+        recent_snippets = [t["content"] for t in context.recent_turns if t.get("role") == "user"][-3:]
+        if recent_snippets:
+            lines.append("*   **Recent Topics:**")
+            for snippet in recent_snippets:
+                snip = snippet.strip().replace("\n", " ")
+                if len(snip) > 80:
+                    snip = snip[:77] + "..."
+                lines.append(f'    - "{snip}"')
+    if not context.profile_facts and not context.recent_turns:
+        lines.append("*   *Ready for task ingestion.*")
+
+    lines.extend(
+        [
+            "",
+            "## 3. 💾 Pending Memory Review",
+        ]
+    )
+    if context.pending_memories:
+        for p in context.pending_memories:
+            lines.append(f"*   [ID {p['id']}] {p['fact']} (use `riva memory accept {p['id']}` or `reject`)")
+    else:
+        lines.append("*   *No new memory candidates pending review.*")
+
+    rec_idx = 4
+    if context.external_insights:
+        lines.extend(
+            [
+                "",
+                f"## {rec_idx}. 🌐 External Insights",
+            ]
+        )
+        for insight in context.external_insights:
+            lines.append(f"*   {insight}")
+        rec_idx += 1
+
+    lines.extend(
+        [
+            "",
+            f"## {rec_idx}. 💡 Actionable Recommendations",
+            "*   Review pending priorities and tasks for today.",
+            "*   Start the local AI stack when ready: `./scripts/start_stack.sh start`.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 async def generate_digest_async(
     context: DigestContext | None = None,
     provider: LLMProvider | None = None,
@@ -197,11 +269,6 @@ async def generate_digest_async(
             insights_section = f"\n\n### 🌐 External Insights (MCP) ({len(ctx.external_insights)})\n" + "\n".join(
                 f"- {item}" for item in ctx.external_insights
             )
-        insights_section = ""
-        if ctx.external_insights:
-            insights_section = f"\n\n### 🌐 External Insights (MCP) ({len(ctx.external_insights)})\n" + "\n".join(
-                f"- {item}" for item in ctx.external_insights
-            )
         content_markdown = (
             f"# 🌅 {title}\n\n"
             f"*(Dry-run preview generated at {now_utc.isoformat()})*\n\n"
@@ -213,22 +280,53 @@ async def generate_digest_async(
             + "\n\n### 💡 Status\nRiva dry-run digest completed successfully."
         )
     else:
-        if provider is None:
+        messages = build_digest_prompt(ctx)
+        content_markdown = None
+
+        # 1. Primary provider
+        active_provider = provider
+        if active_provider is None:
             backend_url = config.OPENAI_BASE_URL if config.PROVIDER == "openai" else config.OLLAMA_BASE_URL
-            provider = create_provider(
+            active_provider = create_provider(
                 config.PROVIDER,
                 model=config.ASSISTANT_MODEL,
                 base_url=backend_url,
                 api_key=config.OPENAI_API_KEY,
             )
 
-        messages = build_digest_prompt(ctx)
-        raw_output = await provider.chat_async(
-            messages,
-            temperature=0.7,
-            max_tokens=1500,
-        )
-        content_markdown = strip_thinking_tags(raw_output)
+        try:
+            raw_output = await active_provider.chat_async(
+                messages,
+                temperature=0.7,
+                max_tokens=1500,
+            )
+            content_markdown = strip_thinking_tags(raw_output)
+        except Exception as primary_err:
+            logger.warning("Primary LLM provider failed: %s", primary_err)
+
+            # 2. Ollama fallback (if primary provider was not Ollama and caller did not force provider)
+            if config.PROVIDER != "ollama" and provider is None:
+                try:
+                    logger.info("Attempting fallback to local Ollama daemon...")
+                    ollama_prov = create_provider(
+                        "ollama",
+                        model=config.OLLAMA_MODEL,
+                        base_url=config.OLLAMA_BASE_URL,
+                    )
+                    raw_output = await ollama_prov.chat_async(
+                        messages,
+                        temperature=0.7,
+                        max_tokens=1500,
+                    )
+                    content_markdown = strip_thinking_tags(raw_output)
+                    logger.info("Successfully synthesized digest via Ollama fallback.")
+                except Exception as ollama_err:
+                    logger.warning("Ollama fallback also failed: %s", ollama_err)
+
+            # 3. Deterministic offline template fallback
+            if not content_markdown:
+                logger.info("Generating deterministic offline digest briefing.")
+                content_markdown = generate_offline_fallback_content(ctx, title)
 
     # Prepare file write with YAML frontmatter
     frontmatter = {
